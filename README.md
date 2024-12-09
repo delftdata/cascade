@@ -14,7 +14,7 @@ Documentation is done with [Google style docstrings](https://google.github.io/st
 It can be generated using [pdoc](https://pdoc.dev/docs/pdoc.html):
 
 ```
-pdoc src/cascade
+pdoc --mermaid src/cascade
 ```
 
 
