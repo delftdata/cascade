@@ -48,6 +48,7 @@ class Edge():
     """An Edge in the Dataflow graph."""
     from_node: Node
     to_node: Node
+    variable_map: dict[str, Any]
 
 class DataFlow:
     """A Dataflow is a graph consisting of `OpNode`s, `MergeNode`s, and `Edge`s.

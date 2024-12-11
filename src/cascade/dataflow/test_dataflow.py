@@ -1,5 +1,6 @@
 from typing import Any
 from cascade.dataflow.dataflow import DataFlow, Edge, Event, InvokeMethod, MergeNode, OpNode
+from cascade.dataflow.operator import StatefulOperator
 
 class DummyUser:
     def __init__(self, key: str, balance: int):
@@ -11,14 +12,14 @@ class DummyUser:
         self.balance -= item_price
         return self.balance >= 0
 
-def buy_item_0_compiled(item_key, *, state: DummyUser, key_stack: list[str]) -> Any:
+def buy_item_0_compiled(item_key, *, state: DummyUser, key_stack: list[str]) -> dict[str, Any]:
     key_stack.append(item_key)
-    return item_key
+    return 
 
-def buy_item_1_compiled(item_price: int, *, state: DummyUser, key_stack: list[str]) -> Any:
+def buy_item_1_compiled(item_price: int, *, state: DummyUser, key_stack: list[str]) -> dict[str, Any]:
     key_stack.pop()
     state.balance -= item_price
-    return state.balance >= 0
+    return {"user_postive_balance": state.balance >= 0}
 
 class DummyItem:
     def __init__(self, key: str, price: int):
@@ -28,23 +29,29 @@ class DummyItem:
     def get_price(self) -> int:
         return self.price
     
-def get_price_compiled(*args, state: DummyItem, key_stack: list[str]) -> Any:
+def get_price_compiled(*args, state: DummyItem, key_stack: list[str]) -> dict[str, Any]:
     key_stack.pop() # final function
-    return state.price
+    return {"item_price": state.price}
 
 ################## TESTS #######################
 
 user = DummyUser("user", 100)
 item = DummyItem("fork", 5)
 
+user_sop = StatefulOperator(DummyUser, 
+                            {"buy_item_0": buy_item_0_compiled,
+                             "buy_item_1": buy_item_1_compiled})
+
+
 def test_simple_df_propogation():
     df = DataFlow("user.buy_item")
-    n1 = OpNode(DummyUser, InvokeMethod("buy_item_0"))
+    n1 = OpNode(DummyUser, InvokeMethod("buy_item_0_compiled"))
     n2 = OpNode(DummyItem, InvokeMethod("get_price"))
     n3 = OpNode(DummyUser, InvokeMethod("buy_item_1"))
     df.add_edge(Edge(n1, n2))
     df.add_edge(Edge(n2, n3))
 
+    user.buy_item(item)
     event = Event(n1, ["user"], ["fork"], {}, df)
 
     # Manually propogate
@@ -53,6 +60,7 @@ def test_simple_df_propogation():
 
     assert len(next_event) == 1
     assert isinstance(next_event[0].target, OpNode)
+    assert next_event[0].target == n2
     assert next_event[0].target.cls == DummyItem
     assert next_event[0].key_stack == ["user", "fork"]
     event = next_event[0]

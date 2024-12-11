@@ -22,7 +22,7 @@ class MethodCall(Generic[T], Protocol):
     other functions should push the correct key(s) onto the `key_stack`.
     """
 
-    def __call__(self, *args: Any, state: T, key_stack: list[str], **kwargs: Any) -> Any: ...
+    def __call__(self, *args: Any, state: T, key_stack: list[str], **kwargs: Any) -> dict[str, Any]: ...
     """@private"""
 
 
