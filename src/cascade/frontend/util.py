@@ -1,0 +1,64 @@
+import matplotlib.pyplot as plt
+import networkx as nx
+
+from klara.core.tree_rewriter import AstBuilder
+from klara.core.cfg import Cfg
+
+
+color_map_map = {0: 'b', 1:'g', 2:'r', 3:'c', 4:'m', 5:'y', 6:'k', -1:'pink'}
+
+
+def plot_graph_with_color(G: nx.DiGraph, grey_background: bool=True):
+    fig, ax = plt.subplots()
+    pos = nx.nx_agraph.graphviz_layout(G, prog="dot")
+    labels = {}
+    color_map = []
+    for block, label_data in G.nodes(data=True):
+        labels[block] = block.block_num
+        color_map.append(color_map_map[block.color])
+        
+    # plt.figure(next(counter),figsize=figzise) 
+    nx.draw(G, pos, labels=labels, node_color=color_map, with_labels=True)
+    if grey_background:
+        fig.set_facecolor('darkgrey')
+
+
+def plot_dataflow_graph(G: nx.DiGraph, grey_background: bool = True):
+    fig, ax = plt.subplots()
+    pos = nx.nx_agraph.graphviz_layout(G, prog="dot")
+    labels = {}
+    for block, label_data in G.nodes(data=True):
+        
+        label = '{' + ','.join(str(s.block_num) for s in block.statement_list) +'}'
+        labels[block] = label
+        
+    nx.draw(G, pos, labels=labels, 
+            # node_size=[len(labels[v]) * 200 for v in G.nodes()],  
+            node_shape="s",  node_color="none", 
+            bbox=dict(facecolor="skyblue", edgecolor='black', boxstyle='round,pad=0.2'),
+            with_labels=True)
+    if grey_background:
+        fig.set_facecolor('darkgrey')
+
+def setup_cfg(code: str) -> Cfg:
+        as_tree = AstBuilder().string_build(code)
+        cfg = Cfg(as_tree)
+        cfg.convert_to_ssa()
+        return cfg
+
+
+if __name__ == '__main__':
+    from textwrap import dedent
+    from dataflow_graph_builder import construct_dataflow_graph
+
+    example_1 = dedent("""\
+                        def function(x):
+                            a = g(x)
+                            b = h(x)
+                            c = f(b)
+                            a = a + 1
+                            res = a + b
+                            return c + res
+                            """)
+    G = construct_dataflow_graph(example_1)
+    plot_graph_with_color(G)
