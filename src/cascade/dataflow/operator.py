@@ -87,7 +87,7 @@ class StatefulOperator(Generic[T]):
         """Create an instance of the underlying class. Equivalent to `T.__init__(*args, **kwargs)`."""
         return self._cls(*args, **kwargs)
 
-    def handle_invoke_method(self, method: InvokeMethod, *args, state: T, key_stack: list[str], **kwargs) -> tuple[Any, T, list[str]]:
+    def handle_invoke_method(self, method: InvokeMethod, *args, state: T, key_stack: list[str], **kwargs) -> dict[str, Any]:
         """Invoke the method of the underlying class.
         
         The `cascade.dataflow.dataflow.InvokeMethod` object must contain a method identifier 

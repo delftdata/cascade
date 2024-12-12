@@ -12,13 +12,13 @@ class DummyUser:
         self.balance -= item_price
         return self.balance >= 0
 
-def buy_item_0_compiled(item_key, *, state: DummyUser, key_stack: list[str]) -> dict[str, Any]:
-    key_stack.append(item_key)
+def buy_item_0_compiled(variable_map, *, state: DummyUser, key_stack: list[str]) -> dict[str, Any]:
+    key_stack.append(variable_map["item_key"])
     return 
 
-def buy_item_1_compiled(item_price: int, *, state: DummyUser, key_stack: list[str]) -> dict[str, Any]:
+def buy_item_1_compiled(variable_map: dict[str, Any], *, state: DummyUser, key_stack: list[str]) -> dict[str, Any]:
     key_stack.pop()
-    state.balance -= item_price
+    state.balance -= variable_map["item_price"]
     return {"user_postive_balance": state.balance >= 0}
 
 class DummyItem:
@@ -52,30 +52,26 @@ def test_simple_df_propogation():
     df.add_edge(Edge(n2, n3))
 
     user.buy_item(item)
-    event = Event(n1, ["user"], ["fork"], {}, df)
+    event = Event(n1, ["user"], {"item_key":"fork"}, df)
 
     # Manually propogate
-    item_key = buy_item_0_compiled(event.args, state=user, key_stack=event.key_stack)
-    next_event = event.propogate(event.key_stack, item_key, None)
+    item_key = buy_item_0_compiled(event.variable_map, state=user, key_stack=event.key_stack)
+    next_event = event.propogate(event.key_stack, item_key)
 
     assert len(next_event) == 1
-    assert isinstance(next_event[0].target, OpNode)
     assert next_event[0].target == n2
-    assert next_event[0].target.cls == DummyItem
     assert next_event[0].key_stack == ["user", "fork"]
     event = next_event[0]
 
-    item_price = get_price_compiled(event.args, state=item, key_stack=event.key_stack)
-    next_event = event.propogate(event.key_stack, item_price, None)
+    item_price = get_price_compiled(event.variable_map, state=item, key_stack=event.key_stack)
+    next_event = event.propogate(event.key_stack, item_price)
 
     assert len(next_event) == 1
-    assert isinstance(next_event[0].target, OpNode)
-    assert next_event[0].target.cls == DummyUser
-    assert next_event[0].key_stack == ["user"]
+    assert next_event[0].target == n3
     event = next_event[0]
 
-    positive_balance = buy_item_1_compiled(event.args, state=user, key_stack=event.key_stack)
-    next_event = event.propogate(event.key_stack, None, None)
+    positive_balance = buy_item_1_compiled(event.variable_map, state=user, key_stack=event.key_stack)
+    next_event = event.propogate(event.key_stack, None)
     assert next_event[0].key_stack == []
 
 
@@ -93,27 +89,25 @@ def test_merge_df_propogation():
     df.add_edge(Edge(n3, n4))
 
     # User with key "foo" buys items with keys "fork" and "spoon"
-    event = Event(n0, ["foo"], ["fork", "spoon"], {}, df)
+    event = Event(n0, ["foo"], {"item_1_key": "fork", "item_2_key": "spoon"}, df)
 
     # Propogate the event (without actually doing any calculation)
     # Normally, the key_stack should've been updated by the runtime here:
     key_stack = ["foo", ["fork", "spoon"]]
-    next_event = event.propogate(key_stack, None, None)
+    next_event = event.propogate(key_stack, None)
 
     assert len(next_event) == 2
-    assert isinstance(next_event[0].target, OpNode)
-    assert isinstance(next_event[1].target, OpNode)
-    assert next_event[0].target.cls == DummyItem
-    assert next_event[1].target.cls == DummyItem
+    assert next_event[0].target == n1
+    assert next_event[1].target == n2
 
     event1, event2 = next_event
-    next_event = event1.propogate(event1.key_stack, None, None)
+    next_event = event1.propogate(event1.key_stack, None)
     assert len(next_event) == 1
-    assert isinstance(next_event[0].target, MergeNode)
+    assert next_event[0].target == n3
 
-    next_event = event2.propogate(event2.key_stack, None, None)
+    next_event = event2.propogate(event2.key_stack, None)
     assert len(next_event) == 1
-    assert isinstance(next_event[0].target, MergeNode)
+    assert next_event[0].target == n3
     
-    final_event = next_event[0].propogate(next_event[0].key_stack, None, None)
+    final_event = next_event[0].propogate(next_event[0].key_stack, None)
     assert final_event[0].target == n4

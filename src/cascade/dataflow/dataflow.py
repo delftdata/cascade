@@ -48,7 +48,7 @@ class Edge():
     """An Edge in the Dataflow graph."""
     from_node: Node
     to_node: Node
-    variable_map: dict[str, Any]
+    variable_map: dict[str, Any] = field(default_factory=dict)
 
 class DataFlow:
     """A Dataflow is a graph consisting of `OpNode`s, `MergeNode`s, and `Edge`s.
@@ -122,16 +122,15 @@ class Event():
     The top of the stack, i.e. `key_stack[-1]`, should always correspond to a key 
     on the StatefulOperator of `target.cls` if `target` is an `OpNode`."""
 
-    args: List[Any]
-    kwargs: dict[str, Any]
-    """The args and kwargs to be passed to the `target`. 
-    If `target` is an `OpNode` this corresponds to the method args/kwargs."""
+    variable_map: dict[str, Any]
+    """A mapping of variable identifiers to values. 
+    If `target` is an `OpNode` this map should include the variables needed for that method."""
 
     dataflow: Optional['DataFlow']
     """The Dataflow that this event is a part of. If None, it won't propogate.
     This might be remove in the future in favour of a routing operator."""
 
-    _id: int = field(default=None)
+    _id: int = field(default=None) # type: ignore (will get updated in __post_init__ if unset)
     """Unique ID for this event. Except in `propogate`, this `id` should not be set."""
     _id_counter: int = field(init=False, default=0, repr=False)
     
@@ -141,18 +140,16 @@ class Event():
             self._id = Event._id_counter
             Event._id_counter += 1
 
-    def propogate(self, key_stack, args, kwargs) -> list['Event']:
+    def propogate(self, key_stack, variable_map: dict[str, Any]) -> list['Event']:
         """Propogate this event through the Dataflow."""
         if self.dataflow is None or len(key_stack) == 0:
-            self.args = args
-            self.kwargs = kwargs
+            self.variable_map = variable_map
             return [self]
         
         targets = self.dataflow.get_neighbors(self.target)
         
         if len(targets) == 0:
-            self.args = args
-            self.kwargs = kwargs
+            self.variable_map = variable_map
             return [self]
         else:
             # An event with multiple targets should have the same number of keys in a list on top of its key stack
@@ -162,8 +159,7 @@ class Event():
             return [Event(
                 target,
                 key_stack + [key],
-                args,
-                kwargs, 
+                variable_map, 
                 self.dataflow,
                 _id=self._id)
                 
