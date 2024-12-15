@@ -22,7 +22,7 @@ class MethodCall(Generic[T], Protocol):
     other functions should push the correct key(s) onto the `key_stack`.
     """
 
-    def __call__(self, *args: Any, state: T, key_stack: list[str], **kwargs: Any) -> dict[str, Any]: ...
+    def __call__(self, *, variable_map: dict[str, Any], state: T, key_stack: list[str]) -> dict[str, Any]: ...
     """@private"""
 
 
@@ -87,7 +87,7 @@ class StatefulOperator(Generic[T]):
         """Create an instance of the underlying class. Equivalent to `T.__init__(*args, **kwargs)`."""
         return self._cls(*args, **kwargs)
 
-    def handle_invoke_method(self, method: InvokeMethod, *args, state: T, key_stack: list[str], **kwargs) -> dict[str, Any]:
+    def handle_invoke_method(self, method: InvokeMethod, variable_map: dict[str, Any], state: T, key_stack: list[str]) -> dict[str, Any]:
         """Invoke the method of the underlying class.
         
         The `cascade.dataflow.dataflow.InvokeMethod` object must contain a method identifier 
@@ -95,5 +95,5 @@ class StatefulOperator(Generic[T]):
 
         The state `T` and key_stack is passed along to the function, and may be modified. 
         """
-        return self._methods[method.method_name](*args, state=state, key_stack=key_stack, **kwargs)
+        return self._methods[method.method_name](variable_map=variable_map, state=state, key_stack=key_stack)
     
