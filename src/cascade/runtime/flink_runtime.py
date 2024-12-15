@@ -1,17 +1,18 @@
 import os
+from typing import Union
 from pyflink.common.typeinfo import Types, get_gateway
 from pyflink.common import Configuration, DeserializationSchema, SerializationSchema
+from pyflink.datastream.data_stream import CloseableIterator
 from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, ValueState, ValueStateDescriptor
-from pyflink.datastream.connectors.kafka import FlinkKafkaConsumer
+from pyflink.datastream.connectors.kafka import FlinkKafkaConsumer, FlinkKafkaProducer
 from pyflink.datastream import StreamExecutionEnvironment
 import pickle 
-from cascade.dataflow.dataflow import Event, InitClass, InvokeMethod, OpNode
+from cascade.dataflow.dataflow import Event, EventResult, InitClass, InvokeMethod, MergeNode, OpNode
 from cascade.dataflow.operator import StatefulOperator
 from confluent_kafka import Producer
 import logging
 
 logger = logging.getLogger(__name__)
-logger.setLevel(level=logging.DEBUG)
 console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
@@ -34,21 +35,27 @@ class FlinkOperator(KeyedProcessFunction):
         assert(isinstance(event.target, OpNode)) # should be handled by filters on this FlinkOperator
         logger.debug(f"FlinkOperator {event.target.cls.__name__}[{ctx.get_current_key()}]: Processing: {event}")
         if isinstance(event.target.method_type, InitClass):
-            result = self.operator.handle_init_class(*event.args, **event.kwargs)
+            # TODO: compile __init__ with only kwargs, and pass the variable_map itself
+            # otherwise, order of variable_map matters for variable assignment
+            result = self.operator.handle_init_class(*event.variable_map.values())
             # Pop this key from the key stack so that we exit
             key_stack.pop()
             self.state.update(pickle.dumps(result))
         elif isinstance(event.target.method_type, InvokeMethod):
             state = pickle.loads(self.state.value())
-            result = self.operator.handle_invoke_method(event.target.method_type, *event.args, state=state, key_stack=key_stack, **event.kwargs)
+            result = self.operator.handle_invoke_method(event.target.method_type, variable_map=event.variable_map, state=state, key_stack=key_stack)
             
             # TODO: check if state actually needs to be updated
             if state is not None:
                 self.state.update(pickle.dumps(state))
 
-        new_events = event.propogate(key_stack, [result], {})
-        logger.debug(f"FlinkOperator {event.target.cls.__name__}[{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
-        yield from new_events
+        new_events = event.propogate(key_stack, result)
+        if isinstance(new_events, EventResult):
+            logger.debug(f"FlinkOperator {event.target.cls.__name__}[{ctx.get_current_key()}]: Returned {new_events}")
+            yield new_events
+        else:
+            logger.debug(f"FlinkOperator {event.target.cls.__name__}[{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
+            yield from new_events
 
 
 class FlinkMergeOperator(KeyedProcessFunction):
@@ -124,12 +131,36 @@ class FlinkRuntime():
     """A Runtime that runs Dataflows on Flink."""
     def __init__(self):
         self.env: StreamExecutionEnvironment = None
-        self.producer: Producer = None
+        """@private"""
 
-    def _initialise(self, kafka_broker="localhost:9092", bundle_time=1, bundle_size=5):
+        self.producer: Producer = None
+        """@private"""
+
+        self.sent_events = 0
+        """The number of events that were sent using `send()`."""
+
+    def init(self, kafka_broker="localhost:9092", bundle_time=1, bundle_size=5):
+        """Initialise & configure the Flink runtime. 
+        
+        This function is required before any other calls, and requires a Kafka 
+        broker to be ready at the specified address.
+
+        :param kafka_broker: The URL of the Kafka service.
+
+        :param bundle_time:  The waiting timeout (in ms) before processing a 
+            bundle for Python UDF execution. This defines how long the elements
+            of a bundle will be buffered before being processed. Lower timeouts
+            lead to lower tail latencies but may affect throughput.
+
+        :param bundle_size: The maximum number of elements to include in a
+            bundle for Python UDF execution. The elements are processed
+            asynchronously. One bundle of elements are processed before
+            processing the next bundle of elements. A larger value can improve
+            throughput but at the cost of more memory usage and higher latency.
+        """
         config = Configuration()
         # Add the Flink Web UI at http://localhost:8081
-        config.set_string("rest.port", "8081")
+        # config.set_string("rest.port", "8081")
 
         # Sets the waiting timeout(in milliseconds) before processing a bundle for Python user-defined function execution. 
         # The timeout defines how long the elements of a bundle will be buffered before being processed.
@@ -159,14 +190,66 @@ class FlinkRuntime():
             "group.id": "test_group_1",
         }
         kafka_consumer = FlinkKafkaConsumer(INPUT_TOPIC, deserialization_schema, properties)
+        self.kafka_internal_sink = FlinkKafkaProducer(INPUT_TOPIC, deserialization_schema, properties)
+        """Kafka sink that will be ingested again by the Flink runtime."""
+
+        stream = (
+            self.env.add_source(kafka_consumer)
+                .map(lambda x: pickle.loads(x))
+                # .filter(lambda e: isinstance(e, Event)) # Enforced by `add_operator` type safety
+            )
         
-        # Pass through
-        self.env.add_source(kafka_consumer).map(lambda x: pickle.loads(x)).print()
+        self.stateful_op_stream = stream.filter(lambda e: isinstance(e.target, OpNode))
+        """Stream that ingests events with an `cascade.dataflow.dataflow.OpNode` target"""
+        
+        self.merge_op_stream = (
+            stream.filter(lambda e: isinstance(e.target, MergeNode))
+                .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
+                .process(FlinkMergeOperator())
+        )
+        """Stream that ingests events with an `cascade.dataflow.dataflow.MergeNode` target"""
 
-        self.producer = Producer({'bootstrap.server': kafka_broker})
+        self.stateful_op_streams = []
+        """List of stateful operator streams, which gets appended at `add_operator`."""
 
-    def _send(self, event):
+        self.producer = Producer({'bootstrap.servers': kafka_broker})
+    
+    def add_operator(self, op: FlinkOperator):
+        """Add a `FlinkOperator` to the Flink datastream."""
+        op_stream = (
+            self.stateful_op_stream.filter(lambda e: e.target.cls == op.operator._cls)
+                .key_by(lambda e: e.key_stack[-1])
+                .process(op)
+            )
+        self.stateful_op_streams.append(op_stream)
+
+    def send(self, event: Event, flush=False):
+        """Send an event to the Kafka source.
+        Once `run` has been called, the Flink runtime will start ingesting these 
+        messages. Messages can always be sent after `init` is called - Flink 
+        will continue ingesting messages after `run` is called asynchronously.
+        """
         self.producer.produce(INPUT_TOPIC, value=pickle.dumps(event))
+        if flush:
+            self.producer.flush()
+        self.sent_events += 1
 
-    def run(self):
-        self.env.execute("Cascade: Flink Runtime")
+    def run(self, run_async=False, collect=False) -> Union[CloseableIterator, None]:
+        """Start ingesting and processing messages from the Kafka source.
+        
+        If `collect` is True then this will return a CloseableIterator over 
+        `cascade.dataflow.dataflow.EventResult`s."""
+
+        # Combine all the operator streams
+        ds = self.merge_op_stream.union(*self.stateful_op_streams)
+        if collect:
+            ds_external = ds.filter(lambda e: isinstance(e, EventResult)).execute_and_collect() 
+        else:
+            ds_external = ds.filter(lambda e: isinstance(e, EventResult)).print() #.add_sink(kafka_external_sink) 
+        ds_internal = ds.filter(lambda e: isinstance(e, Event)).add_sink(self.kafka_internal_sink)
+
+        if run_async:
+            self.env.execute_async("Cascade: Flink Runtime")
+            return ds_external # type: ignore (will be CloseableIterator provided the source is unbounded (i.e. Kafka))
+        else:
+            self.env.execute("Cascade: Flink Runtime")

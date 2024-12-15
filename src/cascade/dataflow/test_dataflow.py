@@ -1,5 +1,5 @@
 from typing import Any
-from cascade.dataflow.dataflow import DataFlow, Edge, Event, InvokeMethod, MergeNode, OpNode
+from cascade.dataflow.dataflow import DataFlow, Edge, Event, EventResult, InvokeMethod, MergeNode, OpNode
 from cascade.dataflow.operator import StatefulOperator
 
 class DummyUser:
@@ -12,11 +12,11 @@ class DummyUser:
         self.balance -= item_price
         return self.balance >= 0
 
-def buy_item_0_compiled(variable_map, *, state: DummyUser, key_stack: list[str]) -> dict[str, Any]:
+def buy_item_0_compiled(variable_map: dict[str, Any], state: DummyUser, key_stack: list[str]) -> dict[str, Any]:
     key_stack.append(variable_map["item_key"])
     return 
 
-def buy_item_1_compiled(variable_map: dict[str, Any], *, state: DummyUser, key_stack: list[str]) -> dict[str, Any]:
+def buy_item_1_compiled(variable_map: dict[str, Any], state: DummyUser, key_stack: list[str]) -> dict[str, Any]:
     key_stack.pop()
     state.balance -= variable_map["item_price"]
     return {"user_postive_balance": state.balance >= 0}
@@ -29,9 +29,10 @@ class DummyItem:
     def get_price(self) -> int:
         return self.price
     
-def get_price_compiled(*args, state: DummyItem, key_stack: list[str]) -> dict[str, Any]:
+def get_price_compiled(variable_map: dict[str, Any], state: DummyItem, key_stack: list[str]) -> dict[str, Any]:
     key_stack.pop() # final function
-    return {"item_price": state.price}
+    variable_map["item_price"] = state.price
+    # return {"item_price": state.price}
 
 ################## TESTS #######################
 
@@ -72,8 +73,8 @@ def test_simple_df_propogation():
 
     positive_balance = buy_item_1_compiled(event.variable_map, state=user, key_stack=event.key_stack)
     next_event = event.propogate(event.key_stack, None)
-    assert next_event[0].key_stack == []
-
+    assert isinstance(next_event, EventResult)
+    
 
 def test_merge_df_propogation():
     df = DataFlow("user.buy_2_items")

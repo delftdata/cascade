@@ -4,9 +4,18 @@
 
 ### Testing
 
+For unit tests:
+
 ```
 pytest
 ```
+
+Integration tests require Kafka to be running (with `docker compose up`):
+
+```
+pytest -m integration
+```
+
 
 ### Documentation
 

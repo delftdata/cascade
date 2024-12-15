@@ -140,17 +140,18 @@ class Event():
             self._id = Event._id_counter
             Event._id_counter += 1
 
-    def propogate(self, key_stack, variable_map: dict[str, Any]) -> list['Event']:
+    def propogate(self, key_stack, result) -> Union['EventResult', list['Event']]:
         """Propogate this event through the Dataflow."""
+
+        # TODO: keys should be structs containing Key and Opnode (as we need to know the entity (cls) and method to invoke for that particular key)
+        # the following method only works because we assume all the keys have the same entity and method
         if self.dataflow is None or len(key_stack) == 0:
-            self.variable_map = variable_map
-            return [self]
+            return EventResult(self._id, result)
         
         targets = self.dataflow.get_neighbors(self.target)
         
         if len(targets) == 0:
-            self.variable_map = variable_map
-            return [self]
+            return EventResult(self._id, result)
         else:
             # An event with multiple targets should have the same number of keys in a list on top of its key stack
             keys = key_stack.pop()
@@ -159,8 +160,13 @@ class Event():
             return [Event(
                 target,
                 key_stack + [key],
-                variable_map, 
+                self.variable_map, 
                 self.dataflow,
                 _id=self._id)
                 
                 for target, key in zip(targets, keys)]
+
+@dataclass
+class EventResult():
+    event_id: int
+    result: Any
