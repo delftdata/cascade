@@ -5,6 +5,7 @@ from cascade.frontend.util import to_camel_case
 
 @dataclass
 class SplitFunction:
+    method_number: int
     method_name: str
     method_body: str
     in_vars: set[str]
@@ -17,12 +18,16 @@ class SplitFunction:
         res = ""
         in_vars: set[str] = self.in_vars
         state_type: str = self.class_name
-        method_signature = f'variable_map: dict[str, Any], *, state: {state_type}, key_stack: list[str]'
+        method_signature = f'variable_map: dict[str, Any], state: {state_type}, key_stack: list[str]'
         vars_from_var_map = self.extract_in_vars(in_vars)
         body: str = self.method_body
         class_name_camel_case: str = to_camel_case(self.class_name)
         if in_vars:
             body = vars_from_var_map + '\n' + body
+
+        if self.method_number != 0:
+            body = 'key_stack.pop()\n' + body
+
         
         res += f'def {class_name_camel_case}_{self.method_name}({method_signature}): \n'
         res += indent(body, '\t')
