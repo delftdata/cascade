@@ -34,6 +34,7 @@ class OpNode(Node):
     The `StatefulOperator` that this node belongs to is referenced by `cls`."""
     cls: Type
     method_type: Union[InitClass, InvokeMethod]
+    assign_result_to: Optional[str] = None
 
 @dataclass
 class MergeNode(Node):
