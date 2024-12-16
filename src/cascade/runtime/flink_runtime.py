@@ -13,6 +13,7 @@ from confluent_kafka import Producer
 import logging
 
 logger = logging.getLogger(__name__)
+logger.setLevel(1)
 console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
@@ -38,6 +39,7 @@ class FlinkOperator(KeyedProcessFunction):
             # TODO: compile __init__ with only kwargs, and pass the variable_map itself
             # otherwise, order of variable_map matters for variable assignment
             result = self.operator.handle_init_class(*event.variable_map.values())
+
             # Pop this key from the key stack so that we exit
             key_stack.pop()
             self.state.update(pickle.dumps(result))
@@ -48,6 +50,13 @@ class FlinkOperator(KeyedProcessFunction):
             # TODO: check if state actually needs to be updated
             if state is not None:
                 self.state.update(pickle.dumps(state))
+        
+        if result is not None:
+            operator_name = self.operator._cls.__name__
+            key = ctx.get_current_key()
+            method = event.target.method_type.__repr__()
+            var_name = f"{operator_name}({key}).{method}"
+            event.variable_map[var_name] = result
 
         new_events = event.propogate(key_stack, result)
         if isinstance(new_events, EventResult):
@@ -68,16 +77,16 @@ class FlinkMergeOperator(KeyedProcessFunction):
         self.other = runtime_context.get_state(descriptor)
 
     def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
-        other_args = self.other.value()
+        other_map = self.other.value()
         logger.debug(f"FlinkMergeOp [{ctx.get_current_key()}]: Processing: {event}")
-        if other_args == None:
-            logger.debug(f"FlinkMergeOp [{ctx.get_current_key()}]: Saving merge value: {event.args}")
-            self.other.update(event.args)
+        if other_map == None:
+            logger.debug(f"FlinkMergeOp [{ctx.get_current_key()}]: Saving variable map")
+            self.other.update(event.variable_map)
         else:
             self.other.clear() 
-            merged_args = [*event.args, *other_args]
-            logger.debug(f"FlinkMergeOp [{ctx.get_current_key()}]: Yielding merge values: {merged_args}")
-            new_event = event.propogate(event.key_stack, [*event.args, *other_args], {})
+            logger.debug(f"FlinkMergeOp [{ctx.get_current_key()}]: Yielding merged variables")
+            event.variable_map |= other_map
+            new_event = event.propogate(event.key_stack, None)
             yield from new_event
 
 
@@ -124,12 +133,10 @@ class ByteSerializer(SerializationSchema, DeserializationSchema):
             self, j_deserialization_schema=j_byte_string_schema
         )
 
-INPUT_TOPIC = "input-topic"
-"""@private"""
 
 class FlinkRuntime():
     """A Runtime that runs Dataflows on Flink."""
-    def __init__(self):
+    def __init__(self, topic="input-topic"):
         self.env: StreamExecutionEnvironment = None
         """@private"""
 
@@ -138,6 +145,11 @@ class FlinkRuntime():
 
         self.sent_events = 0
         """The number of events that were sent using `send()`."""
+
+        self.topic = topic
+        """The topic to use for internal communications.
+        
+        """
 
     def init(self, kafka_broker="localhost:9092", bundle_time=1, bundle_size=5):
         """Initialise & configure the Flink runtime. 
@@ -189,8 +201,8 @@ class FlinkRuntime():
             "auto.offset.reset": "earliest", 
             "group.id": "test_group_1",
         }
-        kafka_consumer = FlinkKafkaConsumer(INPUT_TOPIC, deserialization_schema, properties)
-        self.kafka_internal_sink = FlinkKafkaProducer(INPUT_TOPIC, deserialization_schema, properties)
+        kafka_consumer = FlinkKafkaConsumer(self.topic, deserialization_schema, properties)
+        self.kafka_internal_sink = FlinkKafkaProducer(self.topic, deserialization_schema, properties)
         """Kafka sink that will be ingested again by the Flink runtime."""
 
         stream = (
@@ -229,7 +241,7 @@ class FlinkRuntime():
         messages. Messages can always be sent after `init` is called - Flink 
         will continue ingesting messages after `run` is called asynchronously.
         """
-        self.producer.produce(INPUT_TOPIC, value=pickle.dumps(event))
+        self.producer.produce(self.topic, value=pickle.dumps(event))
         if flush:
             self.producer.flush()
         self.sent_events += 1
