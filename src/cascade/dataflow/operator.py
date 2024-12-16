@@ -1,5 +1,5 @@
 from typing import Any, Generic, Protocol, Type, TypeVar
-from cascade.dataflow.dataflow import InvokeMethod
+from cascade.dataflow.dataflow import DataFlow, InvokeMethod
 
 T = TypeVar('T')
 
@@ -22,21 +22,23 @@ class MethodCall(Generic[T], Protocol):
     other functions should push the correct key(s) onto the `key_stack`.
     """
 
-    def __call__(self, *, variable_map: dict[str, Any], state: T, key_stack: list[str]) -> dict[str, Any]: ...
+    def __call__(self, variable_map: dict[str, Any], state: T, key_stack: list[str]) -> dict[str, Any]: ...
     """@private"""
 
 
 class StatefulOperator(Generic[T]):
     """An abstraction for a user-defined python class. 
     
-    A StatefulOperator handles incoming events, such as `cascade.dataflow.dataflow.InitClass` and `cascade.dataflow.dataflow.InvokeMethod`.
+    A StatefulOperator handles incoming events, such as 
+    `cascade.dataflow.dataflow.InitClass` and `cascade.dataflow.dataflow.InvokeMethod`.
     It is created using a class `cls` and a collection of `methods`. 
     
     These methods map a method identifier (str) to a python function. 
-    Importantly, these functions are "stateless" in the sense that they are not methods, 
-    instead reading and modifying the underlying class `T` through a state variable, see `handle_invoke_method`.
+    Importantly, these functions are "stateless" in the sense that they are not
+    methods, instead reading and modifying the underlying class `T` through a 
+    state variable, see `handle_invoke_method`.
     """
-    def __init__(self, cls: Type[T], methods: dict[str,  MethodCall[T]]):
+    def __init__(self, cls: Type[T], methods: dict[str,  MethodCall[T]], dataflows: dict[str, DataFlow]):
         """Create the StatefulOperator from a class and its compiled methods.
         
         Typically, a class could be comprised of split and non-split methods. Take the following example:
@@ -58,16 +60,19 @@ class StatefulOperator(Generic[T]):
         Here, the class could be turned into a StatefulOperator as follows:
 
         ```py
-        def user_get_balance(*, state: User, key_stack: list[str]):
+        def user_get_balance(variable_map: dict[str, Any], state: User, key_stack: list[str]):
             key_stack.pop()
             return state.balance
         
-        def user_buy_item_0(item_key: str, *, state: User, key_stack: list[str]):
-            key_stack.append(item_key)
+        def user_buy_item_0(variable_map: dict[str, Any], state: User, key_stack: list[str]):
+            key_stack.append(variable_map['item_key'])
             
-        def user_buy_item_1(item_get_price: int, *, state: User, key_stack: list[str]):
-            state.balance -= item_get_price
+        def user_buy_item_1(variable_map: dict[str, Any], state: User, key_stack: list[str]):
+            state.balance -= variable_map['item_get_price']
             return state.balance >= 0
+
+        buy_item_dataflow = Dataflow("user.buy_item")
+        buy_item_dataflow.add_edge(...)
         
         op = StatefulOperator(
                 User, 
@@ -75,12 +80,19 @@ class StatefulOperator(Generic[T]):
                     "buy_item": user_buy_item_0, 
                     "get_balance": user_get_balance, 
                     "buy_item_1": user_buy_item_1
-                })
+                },
+                {
+                    "buy_item": buy_item_dataflow
+                }
+            )
+
         ```
         """
         # methods maps function name to a function. Ideally this is done once in the object 
         self._methods = methods
         self._cls = cls
+        self.dataflows = dataflows
+        """A mapping from method names to DataFlows"""
        
 
     def handle_init_class(self, *args, **kwargs) -> T:

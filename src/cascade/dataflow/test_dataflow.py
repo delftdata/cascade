@@ -41,7 +41,7 @@ item = DummyItem("fork", 5)
 
 user_sop = StatefulOperator(DummyUser, 
                             {"buy_item_0": buy_item_0_compiled,
-                             "buy_item_1": buy_item_1_compiled})
+                             "buy_item_1": buy_item_1_compiled}, None)
 
 
 def test_simple_df_propogation():

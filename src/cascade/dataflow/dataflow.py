@@ -1,6 +1,6 @@
 from abc import ABC
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional, Type, Union
 
 
 @dataclass
@@ -32,7 +32,7 @@ class OpNode(Node):
     
     A `Dataflow` may reference the same `StatefulOperator` multiple times. 
     The `StatefulOperator` that this node belongs to is referenced by `cls`."""
-    cls: Any
+    cls: Type
     method_type: Union[InitClass, InvokeMethod]
 
 @dataclass
@@ -93,6 +93,7 @@ class DataFlow:
         self.name = name
         self.adjacency_list = {}
         self.nodes = {}
+        self.entry: Node = None
 
     def add_node(self, node: Node):
         """Add a node to the Dataflow graph if it doesn't already exist."""
