@@ -1,3 +1,4 @@
+import re
 import matplotlib.pyplot as plt
 import networkx as nx
 
@@ -62,3 +63,6 @@ if __name__ == '__main__':
                             """)
     G = construct_dataflow_graph(example_1)
     plot_graph_with_color(G)
+
+def to_camel_case(name):
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()

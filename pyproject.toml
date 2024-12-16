@@ -1,0 +1,16 @@
+[project]
+name = "cascade"
+version = "0.0.1"
+authors = [
+  { name="Example Author", email="author@example.com" },
+]
+description = "Data analysis for automated choreography on dataflows"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies =[
+        'klara==0.6.3',
+        'networkx==3.2.1'
+]
+[project.urls]
+Homepage = "https://github.com/pypa/sampleproject"
+Issues = "https://github.com/pypa/sampleproject/issues"

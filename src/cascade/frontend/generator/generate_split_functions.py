@@ -1,4 +1,4 @@
-from itertools import count
+from itertools import count, chain
 
 import networkx as nx
 
@@ -20,7 +20,6 @@ class GenerateSplittFunctions:
         self.extract_block_entity_names()
         self.extract_in_out_vars()
         return self.compile_methods()
-    
 
     def compile_methods(self):
         compiled_classes = {}
@@ -37,10 +36,11 @@ class GenerateSplittFunctions:
                 compiled_classes[entity_type] = {}
             split_function_name = node.get_name()
             split_function = self.get_split_fuction(node)
+            split_function.set_class_name(entity_type)
             compiled_classes[entity_type][split_function_name] = split_function
         return compiled_classes
     
-    def get_split_fuction(self, node) -> SplitFunction:
+    def get_split_fuction(self, node: Block) -> SplitFunction:
         in_vars = node.in_vars
         body = self.get_function_code(node) 
         split_function: SplitFunction = SplitFunction(node.get_name(), body, in_vars) 
@@ -48,26 +48,28 @@ class GenerateSplittFunctions:
 
     def get_function_code(self, node: Block): 
         body = Unparser.unparse(node.statement_list)
-        next_functions_to_call = self.get_next_functions_to_call(node)
-        if not next_functions_to_call:
+        if not list(self.dataflow_graph.graph.successors(node)):
             return body
         if body == '':
             separator = ''
         else:
             separator = '\n'
-        return body + f'{separator}call_remote_async({next_functions_to_call})'
+        return body + f'{separator}{self.get_successor_keys_for_key_stack(node)})'
     
-    def get_next_functions_to_call(self, node):
-        cfg: nx.DiGraph = self.dataflow_graph.graph
-        successors = cfg.successors(node)
-        functions_to_call = []
-        for next_node in successors:
-            function_name: str = next_node.get_name()
-            attribute: str = next_node.entity_var_name
-            name:str = f'{attribute}.{function_name}'
-            functions_to_call.append(name)
-        return functions_to_call
+    def get_successors_for_node(self, node: Block):
+        return self.dataflow_graph.graph.successors(node)
+
+    def get_successor_entity_var_names(self, node: Block):
+        return [next_node.entity_var_name for next_node in self.get_successors_for_node(node)]
  
+    def get_successor_keys_for_key_stack(self, node: Block):
+        successor_entity_list = self.get_successor_entity_var_names(node)
+        if len(successor_entity_list) == 1:
+            entity, = successor_entity_list
+            return f'key_stack.append({entity}.key)'
+        keys = ', '.join(f'{s}.key' for s in successor_entity_list)
+        return f'key_stack.append([{keys}])'
+    
     def get_entity_type_from_color(self, color: int):
         color_type_map: dict[int, str] = self.dataflow_graph.color_type_map
         return color_type_map[color]
@@ -124,6 +126,20 @@ class GenerateSplittFunctions:
     def generate(cls, dataflow_graph: DataflowGraph):
         c = cls(dataflow_graph)
         return c.generate_entity_functions()
+
+    @staticmethod 
+    def generate_split_function_string(dataflow_graph: DataflowGraph):
+        res = ''
+        split_functions = GenerateSplittFunctions.generate(dataflow_graph)
+        for split_f in chain.from_iterable(f.values() for f in split_functions.values()):
+            split_f: SplitFunction
+            res += split_f.to_string() + '\n\n'
+        
+        return res
+
+
+
+        
 
 
 
