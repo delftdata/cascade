@@ -1,5 +1,5 @@
 import os
-from typing import Union
+from typing import Optional, Union
 from pyflink.common.typeinfo import Types, get_gateway
 from pyflink.common import Configuration, DeserializationSchema, SerializationSchema, WatermarkStrategy
 from pyflink.datastream.connectors import DeliveryGuarantee
@@ -52,12 +52,8 @@ class FlinkOperator(KeyedProcessFunction):
             if state is not None:
                 self.state.update(pickle.dumps(state))
         
-        if result is not None:
-            operator_name = self.operator._cls.__name__
-            key = ctx.get_current_key()
-            method = event.target.method_type.__repr__()
-            var_name = f"{operator_name}({key}).{method}"
-            event.variable_map[var_name] = result
+        if event.target.assign_result_to is not None:
+            event.variable_map[event.target.assign_result_to] = result
 
         new_events = event.propogate(key_stack, result)
         if isinstance(new_events, EventResult):
@@ -138,7 +134,7 @@ class ByteSerializer(SerializationSchema, DeserializationSchema):
 class FlinkRuntime():
     """A Runtime that runs Dataflows on Flink."""
     def __init__(self, topic="input-topic"):
-        self.env: StreamExecutionEnvironment = None
+        self.env: Optional[StreamExecutionEnvironment] = None
         """@private"""
 
         self.producer: Producer = None
@@ -176,15 +172,7 @@ class FlinkRuntime():
         config = Configuration()
         # Add the Flink Web UI at http://localhost:8081
         # config.set_string("rest.port", "8081")
-
-        # Sets the waiting timeout(in milliseconds) before processing a bundle for Python user-defined function execution. 
-        # The timeout defines how long the elements of a bundle will be buffered before being processed.
-        # Lower timeouts lead to lower tail latencies, but may affect throughput.
         config.set_integer("python.fn-execution.bundle.time", bundle_time)
-
-        # The maximum number of elements to include in a bundle for Python user-defined function execution. 
-        # The elements are processed asynchronously. One bundle of elements are processed before processing the next bundle of elements. 
-        # A larger value can improve the throughput, but at the cost of more memory usage and higher latency.
         config.set_integer("python.fn-execution.bundle.size", bundle_size)
 
         self.env = StreamExecutionEnvironment.get_execution_environment(config)
@@ -213,7 +201,6 @@ class FlinkRuntime():
                 .set_value_only_deserializer(deserialization_schema)
                 .build()
         )
-        # kafka_source = KafkaSource(self.topic, deserialization_schema, properties)
         self.kafka_internal_sink = (
             KafkaSink.builder()
                 .set_bootstrap_servers(kafka_broker)
@@ -226,7 +213,6 @@ class FlinkRuntime():
                 .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build()
         )
-        # self.kafka_internal_sink = KafkaSink(self.topic, deserialization_schema, properties)
         """Kafka sink that will be ingested again by the Flink runtime."""
 
         stream = (
@@ -279,6 +265,8 @@ class FlinkRuntime():
         
         If `collect` is True then this will return a CloseableIterator over 
         `cascade.dataflow.dataflow.EventResult`s."""
+
+        assert self.env is not None, "FlinkRuntime must first be initialised with `init()`."
 
         # Combine all the operator streams
         ds = self.merge_op_stream.union(*self.stateful_op_streams)
