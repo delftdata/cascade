@@ -1,10 +1,11 @@
 import os
 from typing import Union
 from pyflink.common.typeinfo import Types, get_gateway
-from pyflink.common import Configuration, DeserializationSchema, SerializationSchema
+from pyflink.common import Configuration, DeserializationSchema, SerializationSchema, WatermarkStrategy
+from pyflink.datastream.connectors import DeliveryGuarantee
 from pyflink.datastream.data_stream import CloseableIterator
 from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, ValueState, ValueStateDescriptor
-from pyflink.datastream.connectors.kafka import FlinkKafkaConsumer, FlinkKafkaProducer
+from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRecordSerializationSchema, KafkaSource, KafkaSink
 from pyflink.datastream import StreamExecutionEnvironment
 import pickle 
 from cascade.dataflow.dataflow import Event, EventResult, InitClass, InvokeMethod, MergeNode, OpNode
@@ -148,7 +149,9 @@ class FlinkRuntime():
 
         self.topic = topic
         """The topic to use for internal communications.
-        
+
+        Useful for running multiple instances concurrently, for example during 
+        tests.
         """
 
     def init(self, kafka_broker="localhost:9092", bundle_time=1, bundle_size=5):
@@ -201,12 +204,37 @@ class FlinkRuntime():
             "auto.offset.reset": "earliest", 
             "group.id": "test_group_1",
         }
-        kafka_consumer = FlinkKafkaConsumer(self.topic, deserialization_schema, properties)
-        self.kafka_internal_sink = FlinkKafkaProducer(self.topic, deserialization_schema, properties)
+        kafka_source = (
+            KafkaSource.builder()
+                .set_bootstrap_servers(kafka_broker)
+                .set_topics(self.topic)
+                .set_group_id("test_group_1")
+                .set_starting_offsets(KafkaOffsetsInitializer.earliest())
+                .set_value_only_deserializer(deserialization_schema)
+                .build()
+        )
+        # kafka_source = KafkaSource(self.topic, deserialization_schema, properties)
+        self.kafka_internal_sink = (
+            KafkaSink.builder()
+                .set_bootstrap_servers(kafka_broker)
+                .set_record_serializer(
+                    KafkaRecordSerializationSchema.builder()
+                        .set_topic(self.topic)
+                        .set_value_serialization_schema(deserialization_schema)
+                        .build()
+                    )
+                .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                .build()
+        )
+        # self.kafka_internal_sink = KafkaSink(self.topic, deserialization_schema, properties)
         """Kafka sink that will be ingested again by the Flink runtime."""
 
         stream = (
-            self.env.add_source(kafka_consumer)
+            self.env.from_source(
+                    kafka_source, 
+                    WatermarkStrategy.no_watermarks(),
+                    "Kafka Source"
+                )
                 .map(lambda x: pickle.loads(x))
                 # .filter(lambda e: isinstance(e, Event)) # Enforced by `add_operator` type safety
             )
@@ -258,7 +286,7 @@ class FlinkRuntime():
             ds_external = ds.filter(lambda e: isinstance(e, EventResult)).execute_and_collect() 
         else:
             ds_external = ds.filter(lambda e: isinstance(e, EventResult)).print() #.add_sink(kafka_external_sink) 
-        ds_internal = ds.filter(lambda e: isinstance(e, Event)).add_sink(self.kafka_internal_sink)
+        ds_internal = ds.filter(lambda e: isinstance(e, Event)).sink_to(self.kafka_internal_sink)
 
         if run_async:
             self.env.execute_async("Cascade: Flink Runtime")
