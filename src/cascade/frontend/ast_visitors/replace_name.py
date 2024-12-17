@@ -1,5 +1,5 @@
 from klara.core.ssa_visitors import AstVisitor
-from klara.core.nodes import Attribute
+from klara.core import nodes
 
 class ReplaceName(AstVisitor):
     """get all variables (ast.name) from given node, separate by targets and values
@@ -16,5 +16,6 @@ class ReplaceName(AstVisitor):
         c.visit(node)
         return c
 
-    def visit_attribute(self, node: Attribute):
-        node.value.id = 'state'
+    def visit_name(self, node: nodes.Name):
+        if node.id == self.target:
+            node.id = self.new

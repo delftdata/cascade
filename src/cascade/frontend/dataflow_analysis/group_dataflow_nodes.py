@@ -31,7 +31,7 @@ class GroupDataflowNodes:
     
     def color_source(self):
         source: Statement = self.get_source_node()
-        source.set_color(-1)
+        source.set_color(1)
     
     def group_connected_uncollored_components(self, groups):
         """ Takes collored nodes and creates a subgrpah from the uncollored nodes.

@@ -35,6 +35,8 @@ class OpNode(Node):
     cls: Type
     method_type: Union[InitClass, InvokeMethod]
     assign_result_to: Optional[str] = None
+    in_variables: list[str] = field(default_factory=list)
+    out_variables: list[str] = field(default_factory=list)
 
 @dataclass
 class MergeNode(Node):

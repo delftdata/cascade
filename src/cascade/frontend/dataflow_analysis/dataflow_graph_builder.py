@@ -15,6 +15,8 @@ from cascade.frontend.util import setup_cfg
 
 class DataflowGraphBuilder:
 
+    scope_color = 1
+
     def __init__(self, block_list: list, build_context: DataflowGraphBuildContext):
         self.block_list: list = block_list
         self.build_context: DataflowGraphBuildContext = build_context
@@ -43,17 +45,17 @@ class DataflowGraphBuilder:
                 vars = VariableGetter.get_variable(b)
                 statement.extend_targets(vars.targets)
                 statement.extend_values(vars.values)
-                contains_attribute, name = ContainsAttributeVisitor.check(b)
+                contains_attribute, attribute = ContainsAttributeVisitor.check_return_attribute(b)
                 if contains_attribute:
-                    if name == 'self':
+                    if attribute.id == 'self':
                         color: int = self.get_scope_color()
                         statement.set_color(color)
                     else:
-                        color: int = self.get_color_for_var_name(name)
+                        color: int = self.get_color_for_var_name(attribute.id)
                         statement.set_color(color)
                         statement.set_remote()
 
-                    statement.set_attribute_name(name)
+                    statement.set_attribute_name(repr(attribute))
         return statements
     
     def get_color_for_var_name(self, name: str) -> int:
@@ -81,7 +83,7 @@ class DataflowGraphBuilder:
     def get_scope_color(self):
         """ Scope self should always have color 1
         """
-        return 1
+        return self.scope_color
     
     def construct_dataflow_graph(self) -> StatementDataflowGraph:
         statements = self.extract_statment_list()
@@ -94,7 +96,17 @@ class DataflowGraphBuilder:
                     values = set(repr(b) for b in b2.values)
                     if targets.intersection(values):
                         G.add_edge(b1, b2)
+        self.set_source_color(G)
         return StatementDataflowGraph(G, self.get_color_type_map())
+    
+    def set_source_color(self, G):
+        """ Assume the source node should be colored the same color as self (i.e. scope_color)"""
+        source: Statement = self.get_source_node(G)
+        source.set_color(self.get_scope_color())
+    
+    def get_source_node(self, G):
+        """Assumes the source node is the first node"""
+        return next(iter(G.nodes))
 
     @classmethod
     def build(cls, block_list: list, build_context: DataflowGraphBuildContext) -> StatementDataflowGraph:

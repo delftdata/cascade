@@ -1,5 +1,6 @@
 from klara.core.ssa_visitors import AstVisitor
 from klara.core.nodes import AnnAssign, Arg
+from klara.core import nodes
 
 
 class ExtractTypeVisitor(AstVisitor):
@@ -11,13 +12,21 @@ class ExtractTypeVisitor(AstVisitor):
         self.type_map: dict[str, str] = {}
 
     def visit_annassign(self, node: AnnAssign):
-        id: str = str(node.target.id)
+        target =  node.target
+        if type(target) == nodes.AssignAttribute:
+            id: str = target.attr
+        else:
+            id: str = str(target.id)
         type_: str = str(node.annotation.id)
         self.type_map[id] = type_
     
     def visit_arg(self, arg: Arg):
         annotation = arg.annotation
-        if annotation != None:
+        var_type = type(annotation)
+        if var_type == nodes.Const:
+            id: str = arg.arg
+            self.type_map[id] = annotation.value
+        elif annotation != None:
             id: str = arg.arg
             self.type_map[id] = str(annotation.id)
     

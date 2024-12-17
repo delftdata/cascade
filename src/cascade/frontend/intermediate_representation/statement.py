@@ -35,5 +35,8 @@ class Statement:
     def get_parent_block(self):
         return self.parent_block
     
+    def is_remote(self) -> bool:
+        return self.remote_call
+    
     def __hash__(self):
         return hash(self.block_num)

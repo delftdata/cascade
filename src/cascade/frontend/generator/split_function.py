@@ -3,12 +3,15 @@ from dataclasses import dataclass
 
 from cascade.frontend.util import to_camel_case
 
+from klara.core.cfg import RawBasicBlock
+
 @dataclass
 class SplitFunction:
     method_number: int
     method_name: str
-    method_body: str
+    method_body: list[RawBasicBlock]
     in_vars: set[str]
+    out_vars: set[str]
     class_name: str = None
 
     def set_class_name(self, name: str):

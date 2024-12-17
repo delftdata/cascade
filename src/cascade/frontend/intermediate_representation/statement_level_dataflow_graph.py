@@ -16,3 +16,9 @@ class StatementDataflowGraph:
     
     def set_self_color_type(self, entity: str):
         self.color_type_map[1] = entity # sinds 1 is always reserved for self.
+    
+    def get_nodes(self):
+        return self.graph.nodes
+    
+    def get_source_node(self):
+        return next(iter(self.get_nodes()))
