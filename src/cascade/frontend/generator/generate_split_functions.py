@@ -5,7 +5,6 @@ import networkx as nx
 
 from cascade.frontend.intermediate_representation import Block, Statement, StatementDataflowGraph
 from cascade.frontend.generator.unparser import Unparser
-from cascade.frontend.ast_visitors import ContainsAttributeVisitor, VariableGetter
 from cascade.frontend.generator.split_function import SplitFunction
 from cascade.frontend.ast_visitors.replace_name import ReplaceName
 
@@ -20,36 +19,28 @@ class GenerateSplittFunctions:
         self.dataflow_graph: StatementDataflowGraph = dataflow_graph
         self.dataflow_node_map = dict()
         self.counter = count()
-    
-    def build(self):
-        split_functions = self.generate_split_functions()
+        self.split_functions = []
     
     def generate_split_functions(self):
         G = self.dataflow_graph.graph
-        split_functions: list[SplitFunction] = []
         entry_node: Statement = next(iter(G.nodes))
         assert type(entry_node.block) == nodes.FunctionDef
         # targets = copy.copy(entry_node.targets)
         while self.invokes_remote_entity(list(G.nodes)):
             first_half, continuation = self.split_fuction(G)
-            # i: int = next(self.counter)
-            # body = [b.block for b in first_half]
-            # in_vars = copy.copy(targets)
-            # split_f = SplitFunction(i, 'name', body, in_vars, out_vars, 'class_name') 
-
-            split_functions.append(first_half)
+            self.add_split_function(first_half)
             G = G.subgraph(continuation)
             # TODO: Add a new source node to continuation
-        split_f = self.contiunation_to_split_funciton(continuation)
-        split_functions.append(split_f)
-        return split_functions
+        self.add_split_function(continuation)
     
-
-    def contiunation_to_split_funciton(self, statements: list[Statement]):
-        return statements
-
+    def add_split_function(self, statements: list[Statement]): 
+        targets, values = set(), set()
+        for s in statements:
+            targets.update(repr(v) for v in s.targets)
+            values.update(repr(v) for v in s.values)
+        split_f: SplitFunction = SplitFunction(next(self.counter), self.dataflow_graph.method_name, statements, targets=targets, values=values)
+        self.split_functions.append(split_f)
     
-
     def invokes_remote_entity(self, statments: list[Statement]) -> bool:
         """Returns whether statements contains a remote invocation"""
         return any(s.is_remote() for s in statments)
@@ -94,7 +85,8 @@ class GenerateSplittFunctions:
     @classmethod
     def generate(cls, dataflow_graph: StatementDataflowGraph):
         c = cls(dataflow_graph)
-        return c.generate_split_functions()
+        c.generate_split_functions()
+        return c.split_functions
 
     @classmethod
     def as_string(cls, dataflow_graph: StatementDataflowGraph):

@@ -47,7 +47,6 @@ def setup_cfg(code: str) -> Cfg:
         cfg.convert_to_ssa()
         return cfg
 
-
 if __name__ == '__main__':
     from textwrap import dedent
     from dataflow_graph_builder import construct_dataflow_graph

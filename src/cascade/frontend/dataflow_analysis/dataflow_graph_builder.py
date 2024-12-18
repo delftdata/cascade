@@ -1,16 +1,12 @@
 import networkx as nx
 
 
-from klara.core import nodes
-from klara.core.cfg import FunctionLabel, Cfg, ModuleLabel, TempAssignBlock
+from klara.core.cfg import  ModuleLabel, TempAssignBlock
 from klara.core.nodes import Name, FunctionDef
-from klara.core.ssa_visitors import VariableGetter
-from klara.core.ssa import SsaCode
 
 from cascade.frontend.intermediate_representation import Statement, StatementDataflowGraph
-from cascade.frontend.ast_visitors import ContainsAttributeVisitor, ExtractEntityVisitor
+from cascade.frontend.ast_visitors import ContainsAttributeVisitor, VariableGetter
 from cascade.frontend.dataflow_analysis.dataflow_graph_build_context import DataflowGraphBuildContext
-from cascade.frontend.util import setup_cfg
 
 
 class DataflowGraphBuilder:
@@ -42,9 +38,10 @@ class DataflowGraphBuilder:
                 statement = Statement(i, b)
                 i += 1
                 statements.append(statement)
-                vars = VariableGetter.get_variable(b)
-                statement.extend_targets(vars.targets)
-                statement.extend_values(vars.values)
+                variable_getter = VariableGetter.get_variable(b)
+                targets, values = variable_getter.targets, variable_getter.values
+                statement.targets = targets
+                statement.values = values
                 contains_attribute, attribute = ContainsAttributeVisitor.check_return_attribute(b)
                 if contains_attribute:
                     if attribute.id == 'self':

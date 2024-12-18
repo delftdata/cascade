@@ -1,15 +1,13 @@
-from cascade.frontend.intermediate_representation import Block, Statement, StatementDataflowGraph
-from cascade.frontend.generator.compiler_pass_2 import CompilerPass2
-import pytest
+from cascade.frontend.intermediate_representation import StatementDataflowGraph
+from cascade.frontend.generator.compiler_pass_3 import CompilerPass3
+from textwrap import dedent
+from cascade.frontend.util import setup_cfg
+from cascade.frontend.dataflow_analysis.class_list_builder import ClassListBuilder
+from cascade.frontend.dataflow_analysis.class_wrapper import ClassWrapper
+from cascade.frontend.dataflow_analysis.class_list import ClassList
+from cascade.frontend.generator.generate_split_functions import GenerateSplittFunctions
 
-@pytest.mark.compiler
 def test_simple():
-    from textwrap import dedent
-    from cascade.frontend.util import setup_cfg, plot_graph_with_color, plot_dataflow_graph
-    from cascade.frontend.dataflow_analysis.class_list_builder import ClassListBuilder
-    from cascade.frontend.dataflow_analysis.class_wrapper import ClassWrapper
-    from cascade.frontend.dataflow_analysis.class_list import ClassList
-    from cascade.frontend.generator.generate_split_functions import GenerateSplittFunctions
 
     example = """\
             class User:
@@ -36,12 +34,12 @@ def test_simple():
     entity_1: ClassWrapper = class_list.get_class_by_name('User')
     dataflow_graph: StatementDataflowGraph = entity_1.methods['buy_item']
     split_functions = GenerateSplittFunctions.generate(dataflow_graph)
-    cp2 = CompilerPass2(split_functions)
-    body = cp2.make_splitfunctions()
-    for b in body:
+    cp2 = CompilerPass3(split_functions)
+    bodies= cp2.make_splitfunctions()
+    for b in bodies:
         print('\nsplit:')
-        for b_ in b:
-            print(b_)
+        print(b)
+    assert False
 
 # """
 # def get_price_compiled(variable_map: dict[str, Any], state: Item, key_stack: list[str]) -> Any:
@@ -77,8 +75,3 @@ def test_simple():
 #     df.add_edge(Edge(n1, n2))
 #     df.entry = n0
 #     return df
-
-if __name__ == '__main__':
-    test_simple()
-
-

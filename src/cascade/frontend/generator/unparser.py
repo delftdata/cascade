@@ -22,7 +22,7 @@ class Unparser:
                 string: str = f'return {block.value}'
             case nodes.AugAssign:
                 block: nodes.AugAssign
-                string: str = f'{repr(block.target)} {repr(block.op)}= {repr(block.value)}'
+                string: str = f'{repr(block.target)} {block.op}= {repr(block.value)}'
             case nodes.Assign:
                 block: nodes.Assign
                 target, *rest = block.targets
