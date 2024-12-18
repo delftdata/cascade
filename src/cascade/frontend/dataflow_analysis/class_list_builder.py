@@ -23,8 +23,6 @@ class ClassListBuilder(AstVisitor):
         type_map: dict[str, str] = ExtractTypeVisitor.extract(node)
         dataflow_graph_build_context: DataflowGraphBuildContext = DataflowGraphBuildContext(name, self.entity_list, type_map)
         methods = ExtractMethodVisitor.extract(node, dataflow_graph_build_context)
-        for dataflow_graph in methods.values():
-            dataflow_graph.set_self_color_type(name)
         attributes = {} #TODO: Fill attributes
         class_wrapper: ClassWrapper = ClassWrapper(name, methods, attributes)
         self.class_list.append(class_wrapper)

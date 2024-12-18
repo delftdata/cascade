@@ -6,6 +6,9 @@ from cascade.frontend.dataflow_analysis.class_list_builder import ClassListBuild
 from cascade.frontend.dataflow_analysis.class_wrapper import ClassWrapper
 from cascade.frontend.dataflow_analysis.class_list import ClassList
 from cascade.frontend.generator.generate_split_functions import GenerateSplittFunctions
+from cascade.frontend.generator.generate_dataflow import GenerateDataflow
+from cascade.dataflow.dataflow import DataFlow
+
 
 def test_simple():
 
@@ -28,12 +31,21 @@ def test_simple():
                 def get_price(self) -> int:
                     return self.price
             """
+    
     example = dedent(example)
     cfg = setup_cfg(example)
     class_list: ClassList = ClassListBuilder.build(cfg)
-    entity_1: ClassWrapper = class_list.get_class_by_name('User')
+    class_name: str = 'User'
+    entity_1: ClassWrapper = class_list.get_class_by_name(class_name)
     dataflow_graph: StatementDataflowGraph = entity_1.methods['buy_item']
-    split_functions = GenerateSplittFunctions.generate(dataflow_graph)
+    split_functions = GenerateSplittFunctions.generate(dataflow_graph, class_name)
+    df: DataFlow = GenerateDataflow.generate(split_functions, dataflow_graph.instance_type_map)
+    print('dataflow nodes:')
+    for n in df.nodes.values():
+        print(n)
+
+    print(df.adjacency_list)
+
     cp2 = CompilerPass3(split_functions)
     bodies= cp2.make_splitfunctions()
     for b in bodies:

@@ -15,8 +15,9 @@ from klara.core.cfg import RawBasicBlock
 
 class GenerateSplittFunctions:
 
-    def __init__(self, dataflow_graph: StatementDataflowGraph):
+    def __init__(self, dataflow_graph: StatementDataflowGraph, class_name: str):
         self.dataflow_graph: StatementDataflowGraph = dataflow_graph
+        self.class_name = class_name
         self.dataflow_node_map = dict()
         self.counter = count()
         self.split_functions = []
@@ -38,7 +39,9 @@ class GenerateSplittFunctions:
         for s in statements:
             targets.update(repr(v) for v in s.targets)
             values.update(repr(v) for v in s.values)
-        split_f: SplitFunction = SplitFunction(next(self.counter), self.dataflow_graph.method_name, statements, targets=targets, values=values)
+        i: int = next(self.counter)
+        method_name = f'{self.dataflow_graph.name}_{i}'
+        split_f: SplitFunction = SplitFunction(i, method_name, statements, targets=targets, values=values, class_name=self.class_name)
         self.split_functions.append(split_f)
     
     def invokes_remote_entity(self, statments: list[Statement]) -> bool:
@@ -83,19 +86,7 @@ class GenerateSplittFunctions:
         return nx.all_simple_paths(G, source=source, target=target)
 
     @classmethod
-    def generate(cls, dataflow_graph: StatementDataflowGraph):
-        c = cls(dataflow_graph)
+    def generate(cls, dataflow_graph: StatementDataflowGraph, class_name: str):
+        c = cls(dataflow_graph, class_name)
         c.generate_split_functions()
         return c.split_functions
-
-    @classmethod
-    def as_string(cls, dataflow_graph: StatementDataflowGraph):
-        c = cls(dataflow_graph)
-        return c.generate_split_functions_as_string()
-
-
-
-        
-
-
-

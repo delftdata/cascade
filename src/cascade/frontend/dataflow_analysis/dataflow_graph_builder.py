@@ -44,15 +44,15 @@ class DataflowGraphBuilder:
                 statement.values = values
                 contains_attribute, attribute = ContainsAttributeVisitor.check_return_attribute(b)
                 if contains_attribute:
-                    if attribute.id == 'self':
+                    if attribute.value.id == 'self':
                         color: int = self.get_scope_color()
                         statement.set_color(color)
                     else:
-                        color: int = self.get_color_for_var_name(attribute.id)
+                        color: int = self.get_color_for_var_name(attribute.value.id)
                         statement.set_color(color)
                         statement.set_remote()
 
-                    statement.set_attribute_name(repr(attribute))
+                    statement.set_attribute(attribute)
         return statements
     
     def get_color_for_var_name(self, name: str) -> int:
@@ -69,7 +69,7 @@ class DataflowGraphBuilder:
         self.entity_map[name] = color
     
     def get_color_type_map(self) -> dict[int, str]:
-        buildContext: StatementDataflowGraph = self.build_context
+        buildContext: DataflowGraphBuildContext = self.build_context
         color_type_map: dict[int, str] = {}
         for name, color in self.entity_map.items():
             entity_name = buildContext.get_entity_for_var_name(name)
@@ -94,7 +94,7 @@ class DataflowGraphBuilder:
                     if targets.intersection(values):
                         G.add_edge(b1, b2)
         self.set_source_color(G)
-        return StatementDataflowGraph(G, self.get_color_type_map())
+        return StatementDataflowGraph(G, self.build_context.instance_type_map)
     
     def set_source_color(self, G):
         """ Assume the source node should be colored the same color as self (i.e. scope_color)"""

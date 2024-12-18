@@ -17,9 +17,9 @@ class ExtractMethodVisitor(AstVisitor):
         name: str = str(node.name)
         statements = [node] + node.body
         assert name not in self.methods, "A method should be only defined once"
-        dataflowGraph: StatementDataflowGraph = DataflowGraphBuilder.build(statements, self.build_context)
-        dataflowGraph.set_name(name)
-        self.methods[name] = dataflowGraph
+        dataflow_graph: StatementDataflowGraph = DataflowGraphBuilder.build(statements, self.build_context)
+        dataflow_graph.set_name(name)
+        self.methods[name] = dataflow_graph
     
     def visit_Function(self, node):
         print('visiting funciton node')

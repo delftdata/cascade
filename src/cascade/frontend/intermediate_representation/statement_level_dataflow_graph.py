@@ -8,14 +8,11 @@ class StatementDataflowGraph:
         The nodes of the graph are Statements
     """
     graph: nx.DiGraph
-    color_type_map: dict[int, str] # e.g.: {0: "Item"}
+    instance_type_map: dict[str, str] # {"instance_name": "EntityType"}
     method_name: str = None
 
     def set_name(self, name: str):
         self.name = name
-    
-    def set_self_color_type(self, entity: str):
-        self.color_type_map[1] = entity # sinds 1 is always reserved for self.
     
     def get_nodes(self):
         return self.graph.nodes

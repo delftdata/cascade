@@ -1,11 +1,12 @@
 from textwrap import indent
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 from cascade.frontend.util import to_camel_case
 from cascade.frontend.intermediate_representation import Statement
 from cascade.frontend.ast_visitors.replace_name import ReplaceName
 from cascade.frontend.generator.unparser import Unparser
+from cascade.frontend.generator.remote_call import RemoteCall
 
 from klara.core.cfg import RawBasicBlock
 from klara.core import nodes
@@ -18,6 +19,7 @@ class SplitFunction:
     targets: set[str] = None
     values: set[str] = None
     class_name: str = None
+    remote_calls: list[RemoteCall] = field(default_factory=list) # {'assign_result_to_var': 'method_to_call'}
 
     def set_class_name(self, name: str):
         self.class_name = name
@@ -28,14 +30,14 @@ class SplitFunction:
             if not (v in [ 'self_0','self']):
                 body.append(f'{v} = variable_map[\'{v}\']')
 
-        for s in self.method_body:
-            if s.remote_call:
-                assert s.attribute_name
-                instance_name = s.attribute_name
+        for statement in self.method_body:
+            if statement.remote_call:
+                assert statement.attribute_name
+                instance_name = statement.attribute_name
                 res = f'key_stack.append(variable_map[\'{instance_name}_key\'])'
                 body.append(res)
             else:
-                block: RawBasicBlock = s.block
+                block: RawBasicBlock = statement.block
                 if type(block) == nodes.FunctionDef:
                     continue
                 ReplaceName.replace(block, 'self', 'state')
@@ -44,5 +46,19 @@ class SplitFunction:
                     body.append('key_stack.pop()') 
                 body.append(Unparser.unparse_block(block))
         return "\n".join(body)
+
+    def extract_remote_method_calls(self):
+        for statement in self.method_body:
+            if statement.remote_call:
+                self.add_statement_to_remote_call_set(statement)
+
+    def add_statement_to_remote_call_set(self, statement: Statement):
+        assert statement.attribute, "A remote call should have an attribute name to call"
+        attribute = statement.attribute
+        if len(statement.targets) > 1:
+            assert False, "A remote method invocation that returns multiple items is not supported yet..."
+        target, = statement.targets
+        remote_call: RemoteCall = RemoteCall(attribute.value.id, attribute.attr, target)
+        self.remote_calls.append(remote_call)
 
 

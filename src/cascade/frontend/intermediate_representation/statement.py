@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from klara.core.cfg import RawBasicBlock
 
 from cascade.frontend.intermediate_representation import Block
+from klara.core.nodes import Attribute
 
 @dataclass
 class Statement:
@@ -10,7 +11,7 @@ class Statement:
     targets: list[str] = field(default_factory=list)
     values: list[str] = field(default_factory=list)
     remote_call: bool = False
-    attribute_name: str = None
+    attribute: Attribute = None
     parent_block: Block = None
     color: int = 0
 
@@ -23,8 +24,12 @@ class Statement:
     def set_remote(self):
         self.remote_call = True
     
-    def set_attribute_name(self, name: str):
-        self.attribute_name = name
+    @property
+    def attribute_name(self):
+        return repr(self.attribute.value)
+    
+    def set_attribute(self, attribute: Attribute):
+        self.attribute = attribute
     
     def set_color(self, color: int):
         self.color = color
