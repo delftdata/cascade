@@ -1,14 +1,15 @@
+from dataclasses import dataclass
 import os
-from typing import Optional, Union
+from typing import Optional, Type, Union
 from pyflink.common.typeinfo import Types, get_gateway
 from pyflink.common import Configuration, DeserializationSchema, SerializationSchema, WatermarkStrategy
 from pyflink.datastream.connectors import DeliveryGuarantee
 from pyflink.datastream.data_stream import CloseableIterator
 from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, ValueState, ValueStateDescriptor
 from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRecordSerializationSchema, KafkaSource, KafkaSink
-from pyflink.datastream import StreamExecutionEnvironment
+from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 import pickle 
-from cascade.dataflow.dataflow import Event, EventResult, InitClass, InvokeMethod, MergeNode, OpNode
+from cascade.dataflow.dataflow import Event, EventResult, Filter, InitClass, InvokeMethod, MergeNode, Node, OpNode, SelectAllNode
 from cascade.dataflow.operator import StatefulOperator
 from confluent_kafka import Producer
 import logging
@@ -19,6 +20,18 @@ console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
+
+@dataclass
+class FlinkRegisterKeyNode(Node):
+    """A node that will register a key with the SelectAll operator.
+    
+    This node is specific to Flink, and will be automatically generated.
+    It should not be used in a `DataFlow`.
+    
+    @private
+    """
+    key: str
+    cls: Type
 
 class FlinkOperator(KeyedProcessFunction):
     """Wraps an `cascade.dataflow.datflow.StatefulOperator` in a KeyedProcessFunction so that it can run in Flink.
@@ -41,6 +54,17 @@ class FlinkOperator(KeyedProcessFunction):
             # otherwise, order of variable_map matters for variable assignment
             result = self.operator.handle_init_class(*event.variable_map.values())
 
+            # Register the created key in FlinkSelectAllOperator
+            register_key_event = Event(
+                FlinkRegisterKeyNode(key_stack[-1], self.operator._cls), # problem is that this id goes up when we don't rly watn it
+                [],
+                {},
+                None,
+                _id = event._id
+            )
+            logger.debug(f"FlinkOperator {event.target.cls.__name__}[{ctx.get_current_key()}]: Registering key: {register_key_event}")
+            yield register_key_event
+
             # Pop this key from the key stack so that we exit
             key_stack.pop()
             self.state.update(pickle.dumps(result))
@@ -51,6 +75,12 @@ class FlinkOperator(KeyedProcessFunction):
             # TODO: check if state actually needs to be updated
             if state is not None:
                 self.state.update(pickle.dumps(state))
+        elif isinstance(event.target.method_type, Filter):
+            state = pickle.loads(self.state.value())
+            result = event.target.method_type.filter_fn(event.variable_map, state)
+            if not result:
+                return
+            result = event.key_stack[-1] 
         
         if event.target.assign_result_to is not None:
             event.variable_map[event.target.assign_result_to] = result
@@ -63,6 +93,36 @@ class FlinkOperator(KeyedProcessFunction):
             logger.debug(f"FlinkOperator {event.target.cls.__name__}[{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
             yield from new_events
 
+class FlinkSelectAllOperator(KeyedProcessFunction):
+    """A process function that yields all keys of a certain class"""
+    def __init__(self):
+        self.state: ValueState = None # type: ignore (expect state to be initialised on .open())
+    
+    def open(self, runtime_context: RuntimeContext):
+        descriptor = ValueStateDescriptor("entity-keys", Types.PICKLED_BYTE_ARRAY()) #,Types.OBJECT_ARRAY(Types.STRING()))
+        self.state: ValueState = runtime_context.get_state(descriptor)
+
+    def process_element(self, event: Event, ctx: 'ProcessFunction.Context'):
+        state: list[str] = self.state.value()
+        if state is None:
+            state = []
+
+        if isinstance(event.target, FlinkRegisterKeyNode):
+            logger.debug(f"SelectAllOperator [{event.target.cls.__name__}]: Processing: {event}")
+            
+            state.append(event.target.key)
+            self.state.update(state)
+
+        elif isinstance(event.target, SelectAllNode):
+            logger.debug(f"SelectAllOperator [{event.target.cls.__name__}]: Processing: {event}")
+
+            # Yield all the keys we now about
+            event.key_stack.append(state)
+            new_events = event.propogate(event.key_stack, None)
+            logger.debug(f"SelectAllOperator [{event.target.cls.__name__}]: Propogated {len(new_events)} events")
+            yield from new_events
+        else:
+            raise Exception(f"Unexpected target for SelectAllOperator: {event.target}")
 
 class FlinkMergeOperator(KeyedProcessFunction):
     """Flink implementation of a merge operator."""
@@ -215,7 +275,7 @@ class FlinkRuntime():
         )
         """Kafka sink that will be ingested again by the Flink runtime."""
 
-        stream = (
+        event_stream = (
             self.env.from_source(
                     kafka_source, 
                     WatermarkStrategy.no_watermarks(),
@@ -225,11 +285,29 @@ class FlinkRuntime():
                 # .filter(lambda e: isinstance(e, Event)) # Enforced by `add_operator` type safety
             )
         
-        self.stateful_op_stream = stream.filter(lambda e: isinstance(e.target, OpNode))
+        # Events with a `SelectAllNode` will first be processed by the select 
+        # all operator, which will send out multiple other Events that can
+        # then be processed by operators in the same steam.
+        select_all_stream = (
+            event_stream.filter(lambda e: 
+                    isinstance(e.target, SelectAllNode) or isinstance(e.target, FlinkRegisterKeyNode))
+                .key_by(lambda e: e.target.cls)
+                .process(FlinkSelectAllOperator())
+        )
+        """Stream that ingests events with an `SelectAllNode` or `FlinkRegisterKeyNode`"""
+        not_select_all_stream = (
+            event_stream.filter(lambda e:
+                    not (isinstance(e.target, SelectAllNode) or isinstance(e.target, FlinkRegisterKeyNode)))
+        )
+
+        event_stream = select_all_stream.union(not_select_all_stream)
+
+
+        self.stateful_op_stream = event_stream.filter(lambda e: isinstance(e.target, OpNode))
         """Stream that ingests events with an `cascade.dataflow.dataflow.OpNode` target"""
         
         self.merge_op_stream = (
-            stream.filter(lambda e: isinstance(e.target, MergeNode))
+            event_stream.filter(lambda e: isinstance(e.target, MergeNode))
                 .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
                 .process(FlinkMergeOperator())
         )
@@ -269,7 +347,21 @@ class FlinkRuntime():
         assert self.env is not None, "FlinkRuntime must first be initialised with `init()`."
 
         # Combine all the operator streams
-        ds = self.merge_op_stream.union(*self.stateful_op_streams)
+        operator_streams = self.merge_op_stream.union(*self.stateful_op_streams)
+        
+        # Add filtering for nodes with a `Filter` target
+        full_stream_filtered = (
+            operator_streams
+                .filter(lambda e: isinstance(e, Event) and isinstance(e.target, Filter))
+                .filter(lambda e: e.target.filter_fn())    
+        )
+        full_stream_unfiltered = (
+            operator_streams
+                .filter(lambda e: not (isinstance(e, Event) and isinstance(e.target, Filter)))
+        )
+        ds = full_stream_filtered.union(full_stream_unfiltered)
+
+        # Output the stream
         if collect:
             ds_external = ds.filter(lambda e: isinstance(e, EventResult)).execute_and_collect() 
         else:
