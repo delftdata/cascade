@@ -1,14 +1,14 @@
 import os
-from typing import Optional, Union
+from typing import Optional, Type, Union
 from pyflink.common.typeinfo import Types, get_gateway
 from pyflink.common import Configuration, DeserializationSchema, SerializationSchema, WatermarkStrategy
 from pyflink.datastream.connectors import DeliveryGuarantee
 from pyflink.datastream.data_stream import CloseableIterator
 from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, ValueState, ValueStateDescriptor
 from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRecordSerializationSchema, KafkaSource, KafkaSink
-from pyflink.datastream import StreamExecutionEnvironment
+from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 import pickle 
-from cascade.dataflow.dataflow import Event, EventResult, InitClass, InvokeMethod, MergeNode, OpNode
+from cascade.dataflow.dataflow import Event, EventResult, Filter, InitClass, InvokeMethod, MergeNode, OpNode, SelectAllNode
 from cascade.dataflow.operator import StatefulOperator
 from confluent_kafka import Producer
 import logging
@@ -51,6 +51,12 @@ class FlinkOperator(KeyedProcessFunction):
             # TODO: check if state actually needs to be updated
             if state is not None:
                 self.state.update(pickle.dumps(state))
+        elif isinstance(event.target.method_type, Filter):
+            state = pickle.loads(self.state.value())
+            result = event.target.method_type.filter_fn(event.variable_map, state)
+            if not result:
+                return
+            result = event.key_stack[-1] 
         
         if event.target.assign_result_to is not None:
             event.variable_map[event.target.assign_result_to] = result
@@ -63,6 +69,20 @@ class FlinkOperator(KeyedProcessFunction):
             logger.debug(f"FlinkOperator {event.target.cls.__name__}[{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
             yield from new_events
 
+class SelectAllOperator(ProcessFunction):
+    """A process function that yields all keys of a certain class"""
+    def __init__(self, ids: dict[Type, list[str]]):
+        self.ids = ids
+
+    def process_element(self, event: Event, ctx: 'ProcessFunction.Context'):
+        assert isinstance(event.target, SelectAllNode)
+        logger.debug(f"SelectAllOperator {event.target.cls.__name__}: Processing: {event}")
+
+        # yield all the hotel_ids we know about
+        event.key_stack.append(self.ids[event.target.cls])
+        new_events = event.propogate(event.key_stack, None)
+        logger.debug(f"SelectAll [{event.target.cls}]: Propogated {len(new_events)} events")
+        yield from new_events
 
 class FlinkMergeOperator(KeyedProcessFunction):
     """Flink implementation of a merge operator."""

@@ -1,6 +1,6 @@
 from abc import ABC
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Type, Union
+from typing import Any, Callable, List, Optional, Type, Union
 
 
 @dataclass
@@ -12,6 +12,11 @@ class InitClass:
 class InvokeMethod:
     """A method invocation of the underlying method indentifier."""
     method_name: str
+
+@dataclass
+class Filter:
+    """Filter by this function"""
+    filter_fn: Callable
 
 @dataclass
 class Node(ABC):
@@ -33,8 +38,16 @@ class OpNode(Node):
     A `Dataflow` may reference the same `StatefulOperator` multiple times. 
     The `StatefulOperator` that this node belongs to is referenced by `cls`."""
     cls: Type
-    method_type: Union[InitClass, InvokeMethod]
+    method_type: Union[InitClass, InvokeMethod, Filter]
     assign_result_to: Optional[str] = None
+
+@dataclass
+class SelectAllNode(Node):
+    """A node type that will yield all items of an entity filtered by 
+    some function.
+    
+    Think of this as executing `SELECT * FROM cls`"""
+    cls: Type
 
 @dataclass
 class MergeNode(Node):
@@ -155,18 +168,33 @@ class Event():
         if len(targets) == 0:
             return EventResult(self._id, result)
         else:
-            # An event with multiple targets should have the same number of keys in a list on top of its key stack
             keys = key_stack.pop()
             if not isinstance(keys, list):
                 keys = [keys]
-            return [Event(
-                target,
-                key_stack + [key],
-                self.variable_map, 
-                self.dataflow,
-                _id=self._id)
-                
-                for target, key in zip(targets, keys)]
+
+            if len(targets) == 1:
+                # We assume that all keys need to go to the same target
+                # this is only used for SelectAll propogation
+                return [Event(
+                    targets[0],
+                    key_stack + [key],
+                    self.variable_map, 
+                    self.dataflow,
+                    _id=self._id)
+                    
+                    for key in keys]
+            else:
+                # An event with multiple targets should have the same number of
+                # keys in a list on top of its key stack
+                assert len(targets) == len(keys)
+                return [Event(
+                    target,
+                    key_stack + [key],
+                    self.variable_map, 
+                    self.dataflow,
+                    _id=self._id)
+                    
+                    for target, key in zip(targets, keys)]
 
 @dataclass
 class EventResult():
