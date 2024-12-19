@@ -25,9 +25,10 @@ class SplitFunction:
         self.class_name = name
     
     def to_string(self) -> str:
-        body: str = indent(self.body_to_string(), '\t')
+        indent_prefix: str = ' ' * 4 # indent usting 4 spaces.
+        body: str = indent(self.body_to_string(), indent_prefix)
         method_signature: str = self.get_method_signature()
-        compiled_method_as_string: str = f'def {self.method_name}_compiled({method_signature}) -> Any: \n {body}'
+        compiled_method_as_string: str = f'def {self.method_name}_compiled({method_signature}) -> Any:\n{body}'
         return compiled_method_as_string
 
     def get_method_signature(self) -> str:
@@ -41,8 +42,10 @@ class SplitFunction:
 
         for statement in self.method_body:
             if statement.remote_call:
-                assert statement.attribute_name
-                instance_name = statement.attribute_name
+                assert statement.attribute
+                attribute: nodes.Attribute = statement.attribute
+                value: nodes.Name = attribute.value
+                instance_name: str = value.id
                 res = f'key_stack.append(variable_map[\'{instance_name}_key\'])'
                 body.append(res)
             else:
@@ -52,8 +55,11 @@ class SplitFunction:
                 ReplaceName.replace(block, 'self', 'state')
                 
                 if type(block) == nodes.Return:
-                    body.append('key_stack.pop()') 
+                    body.insert(0,'key_stack.pop()') 
                 body.append(unparse(block))
+
+        if 'return' not in body[-1]:
+            body.append('return None')
         return "\n".join(body)
 
     def extract_remote_method_calls(self):

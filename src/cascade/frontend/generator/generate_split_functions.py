@@ -1,22 +1,20 @@
-from itertools import count, chain
-from copy import copy
+from itertools import count
 
 import networkx as nx
 
 from cascade.frontend.intermediate_representation import Statement, StatementDataflowGraph
 from cascade.frontend.generator.split_function import SplitFunction
-from cascade.frontend.ast_visitors.replace_name import ReplaceName
 
-from cascade.dataflow.dataflow import DataFlow, Edge, InvokeMethod, OpNode, MergeNode
 
 from klara.core import nodes
 from klara.core.cfg import RawBasicBlock
 
 class GenerateSplittFunctions:
 
-    def __init__(self, dataflow_graph: StatementDataflowGraph, class_name: str):
+    def __init__(self, dataflow_graph: StatementDataflowGraph, class_name: str, entities: list[str]):
         self.dataflow_graph: StatementDataflowGraph = dataflow_graph
-        self.class_name = class_name
+        self.class_name: str = class_name
+        self.entities: list[str] = entities
         self.dataflow_node_map = dict()
         self.counter = count()
         self.split_functions = []
@@ -38,11 +36,26 @@ class GenerateSplittFunctions:
         targets, values = set(), set()
         for s in statements:
             targets.update(repr(v) for v in s.targets)
-            values.update(repr(v) for v in s.values)
+            if s.is_remote():
+                for v in s.values:
+                    if not self.value_is_entity(v):
+                        values.update(repr(v))
+                # values.update(repr(v) for v in s.values if not self.value_is_entity(v))
+            elif type(s.block) != nodes.FunctionDef:
+                values.update(repr(v) for v in s.values if not self.value_is_entity(v))
         i: int = next(self.counter)
         method_name = f'{self.dataflow_graph.name}_{i}'
         split_f: SplitFunction = SplitFunction(i, method_name, statements, targets=targets, values=values, class_name=self.class_name)
         self.split_functions.append(split_f)
+    
+    def value_is_entity(self, value: nodes.Name) -> bool:
+        value_id = value.id
+        instance_type_map: dict[str,str] = self.dataflow_graph.instance_type_map
+        if not value_id in instance_type_map:
+            return False
+        entity_type: str = instance_type_map[value_id]
+        return entity_type in self.entities
+
     
     def invokes_remote_entity(self, statments: list[Statement]) -> bool:
         """Returns whether statements contains a remote invocation"""
@@ -86,7 +99,7 @@ class GenerateSplittFunctions:
         return nx.all_simple_paths(G, source=source, target=target)
 
     @classmethod
-    def generate(cls, dataflow_graph: StatementDataflowGraph, class_name: str):
-        c = cls(dataflow_graph, class_name)
+    def generate(cls, dataflow_graph: StatementDataflowGraph, class_name: str, entities: list[str]):
+        c = cls(dataflow_graph, class_name, entities)
         c.generate_split_functions()
         return c.split_functions
