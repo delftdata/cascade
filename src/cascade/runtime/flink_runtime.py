@@ -1,15 +1,16 @@
+from dataclasses import dataclass
 import os
-from typing import Optional, Union
+from typing import Optional, Type, Union
 from pyflink.common.typeinfo import Types, get_gateway
 from pyflink.common import Configuration, DeserializationSchema, SerializationSchema, WatermarkStrategy
 from pyflink.datastream.connectors import DeliveryGuarantee
 from pyflink.datastream.data_stream import CloseableIterator
 from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, ValueState, ValueStateDescriptor
 from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRecordSerializationSchema, KafkaSource, KafkaSink
-from pyflink.datastream import StreamExecutionEnvironment
+from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 import pickle 
-from cascade.dataflow.dataflow import Event, EventResult, InitClass, InvokeMethod, MergeNode, OpNode
-from cascade.dataflow.operator import StatefulOperator
+from cascade.dataflow.dataflow import Arrived, CollectNode, CollectTarget, Event, EventResult, Filter, InitClass, InvokeMethod, MergeNode, Node, NotArrived, OpNode, Operator, Result, SelectAllNode
+from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from confluent_kafka import Producer
 import logging
 
@@ -19,6 +20,18 @@ console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
+
+@dataclass
+class FlinkRegisterKeyNode(Node):
+    """A node that will register a key with the SelectAll operator.
+    
+    This node is specific to Flink, and will be automatically generated.
+    It should not be used in a `DataFlow`.
+    
+    @private
+    """
+    key: str
+    cls: Type
 
 class FlinkOperator(KeyedProcessFunction):
     """Wraps an `cascade.dataflow.datflow.StatefulOperator` in a KeyedProcessFunction so that it can run in Flink.
@@ -34,12 +47,28 @@ class FlinkOperator(KeyedProcessFunction):
 
     def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
         key_stack = event.key_stack
-        assert(isinstance(event.target, OpNode)) # should be handled by filters on this FlinkOperator
-        logger.debug(f"FlinkOperator {event.target.cls.__name__}[{ctx.get_current_key()}]: Processing: {event}")
+
+        # should be handled by filters on this FlinkOperator    
+        assert(isinstance(event.target, OpNode)) 
+        assert(isinstance(event.target.operator, StatefulOperator)) 
+        assert(event.target.operator.entity == self.operator.entity) 
+
+        logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Processing: {event.target.method_type}")
         if isinstance(event.target.method_type, InitClass):
             # TODO: compile __init__ with only kwargs, and pass the variable_map itself
             # otherwise, order of variable_map matters for variable assignment
             result = self.operator.handle_init_class(*event.variable_map.values())
+
+            # Register the created key in FlinkSelectAllOperator
+            register_key_event = Event(
+                FlinkRegisterKeyNode(key_stack[-1], self.operator.entity),
+                [],
+                {},
+                None,
+                _id = event._id
+            )
+            logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Registering key: {register_key_event}")
+            yield register_key_event
 
             # Pop this key from the key stack so that we exit
             key_stack.pop()
@@ -51,18 +80,141 @@ class FlinkOperator(KeyedProcessFunction):
             # TODO: check if state actually needs to be updated
             if state is not None:
                 self.state.update(pickle.dumps(state))
+        elif isinstance(event.target.method_type, Filter):
+            state = pickle.loads(self.state.value())
+            result = event.target.method_type.filter_fn(event.variable_map, state)
+            if not result:
+                return
+            result = event.key_stack[-1] 
         
         if event.target.assign_result_to is not None:
             event.variable_map[event.target.assign_result_to] = result
 
         new_events = event.propogate(key_stack, result)
         if isinstance(new_events, EventResult):
-            logger.debug(f"FlinkOperator {event.target.cls.__name__}[{ctx.get_current_key()}]: Returned {new_events}")
+            logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Returned {new_events}")
             yield new_events
         else:
-            logger.debug(f"FlinkOperator {event.target.cls.__name__}[{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
+            logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
             yield from new_events
 
+class FlinkStatelessOperator(ProcessFunction):
+    """Wraps an `cascade.dataflow.datflow.StatefulOperator` in a KeyedProcessFunction so that it can run in Flink.
+    """
+    def __init__(self, operator: StatelessOperator) -> None:
+        self.state: ValueState = None # type: ignore (expect state to be initialised on .open())
+        self.operator = operator
+
+
+    def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
+        key_stack = event.key_stack
+
+        # should be handled by filters on this FlinkOperator    
+        assert(isinstance(event.target, OpNode)) 
+        assert(isinstance(event.target.operator, StatelessOperator))
+
+        logger.debug(f"FlinkStatelessOperator {self.operator.dataflow.name}[{event._id}]: Processing: {event.target.method_type}")
+        if isinstance(event.target.method_type, InvokeMethod):
+            result = self.operator.handle_invoke_method(event.target.method_type, variable_map=event.variable_map, key_stack=key_stack)  
+        else:
+            raise Exception(f"A StatelessOperator cannot compute event type: {event.target.method_type}")
+        
+        if event.target.assign_result_to is not None:
+            event.variable_map[event.target.assign_result_to] = result
+
+        new_events = event.propogate(key_stack, result)
+        if isinstance(new_events, EventResult):
+            logger.debug(f"FlinkStatelessOperator {self.operator.dataflow.name}[{event._id}]: Returned {new_events}")
+            yield new_events
+        else:
+            logger.debug(f"FlinkStatelessOperator {self.operator.dataflow.name}[{event._id}]: Propogated {len(new_events)} new Events")
+            yield from new_events
+
+class FlinkSelectAllOperator(KeyedProcessFunction):
+    """A process function that yields all keys of a certain class"""
+    def __init__(self):
+        self.state: ValueState = None # type: ignore (expect state to be initialised on .open())
+    
+    def open(self, runtime_context: RuntimeContext):
+        descriptor = ValueStateDescriptor("entity-keys", Types.PICKLED_BYTE_ARRAY()) #,Types.OBJECT_ARRAY(Types.STRING()))
+        self.state: ValueState = runtime_context.get_state(descriptor)
+
+    def process_element(self, event: Event, ctx: 'ProcessFunction.Context'):
+        state: list[str] = self.state.value()
+        if state is None:
+            state = []
+
+        if isinstance(event.target, FlinkRegisterKeyNode):
+            logger.debug(f"SelectAllOperator [{event.target.cls.__name__}]: Registering key: {event.target.key}")
+            
+            state.append(event.target.key)
+            self.state.update(state)
+
+        elif isinstance(event.target, SelectAllNode):
+            logger.debug(f"SelectAllOperator [{event.target.cls.__name__}]: Selecting all")
+
+            # Yield all the keys we now about
+            event.key_stack.append(state)
+            num_events = len(state)
+            
+            # Propogate the event to the next node
+            new_events = event.propogate(event.key_stack, None)
+            assert num_events == len(new_events)
+            
+            logger.debug(f"SelectAllOperator [{event.target.cls.__name__}]: Propogated {num_events} events with target: {event.target.collect_target}")
+            yield from new_events
+        else:
+            raise Exception(f"Unexpected target for SelectAllOperator: {event.target}")
+
+class FlinkCollectOperator(KeyedProcessFunction):
+    """Flink implementation of a merge operator."""
+    def __init__(self): #, merge_node: MergeNode) -> None:
+        self.collection: ValueState = None # type: ignore (expect state to be initialised on .open())
+        #self.node = merge_node
+
+    def open(self, runtime_context: RuntimeContext):
+        descriptor = ValueStateDescriptor("merge_state", Types.PICKLED_BYTE_ARRAY())
+        self.collection = runtime_context.get_state(descriptor)
+
+    def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
+        collection: list[Result] = self.collection.value()
+        logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Processing: {event}")
+        
+        # for now we assume there is only 1 merge per df
+        assert event.collect_target is not None
+        entry: CollectTarget = event.collect_target
+        target_node: CollectNode = entry.target_node
+
+        # Add to the map
+        if collection == None:
+            logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Creating map")
+            collection = [NotArrived()] * entry.total_items
+        logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Processed event {entry.result_idx} ({entry.total_items})")
+        
+        result = None
+        try:
+            result = event.variable_map[target_node.read_results_from]
+        except KeyError:
+            pass
+
+        collection[entry.result_idx] = Arrived(result)
+        self.collection.update(collection)
+        
+        # Yield events if the merge is done
+        if all([isinstance(r, Arrived) for r in collection]):
+            logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Yielding collection")
+            
+            collection = [r.val for r in collection] # type: ignore (r is of type Arrived)
+            event.variable_map[target_node.assign_result_to] = collection
+            new_events = event.propogate(event.key_stack, collection)
+
+            self.collection.clear() 
+            if isinstance(new_events, EventResult):
+                logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Returned {new_events}")
+                yield new_events
+            else:
+                logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
+                yield from new_events
 
 class FlinkMergeOperator(KeyedProcessFunction):
     """Flink implementation of a merge operator."""
@@ -215,7 +367,7 @@ class FlinkRuntime():
         )
         """Kafka sink that will be ingested again by the Flink runtime."""
 
-        stream = (
+        event_stream = (
             self.env.from_source(
                     kafka_source, 
                     WatermarkStrategy.no_watermarks(),
@@ -225,29 +377,71 @@ class FlinkRuntime():
                 # .filter(lambda e: isinstance(e, Event)) # Enforced by `add_operator` type safety
             )
         
-        self.stateful_op_stream = stream.filter(lambda e: isinstance(e.target, OpNode))
-        """Stream that ingests events with an `cascade.dataflow.dataflow.OpNode` target"""
-        
+        # Events with a `SelectAllNode` will first be processed by the select 
+        # all operator, which will send out multiple other Events that can
+        # then be processed by operators in the same steam.
+        select_all_stream = (
+            event_stream.filter(lambda e: 
+                    isinstance(e.target, SelectAllNode) or isinstance(e.target, FlinkRegisterKeyNode))
+                .key_by(lambda e: e.target.cls)
+                .process(FlinkSelectAllOperator())
+        )
+        """Stream that ingests events with an `SelectAllNode` or `FlinkRegisterKeyNode`"""
+        not_select_all_stream = (
+            event_stream.filter(lambda e:
+                    not (isinstance(e.target, SelectAllNode) or isinstance(e.target, FlinkRegisterKeyNode)))
+        )
+
+        event_stream = select_all_stream.union(not_select_all_stream)
+
+        operator_stream = event_stream.filter(lambda e: isinstance(e.target, OpNode))
+
+        self.stateful_op_stream = (
+            operator_stream
+                .filter(lambda e: isinstance(e.target.operator, StatefulOperator))
+        )
+
+        self.stateless_op_stream = (
+            operator_stream
+                .filter(lambda e: isinstance(e.target.operator, StatelessOperator))
+        )
+
+        # self.merge_op_stream = (
+        #     event_stream.filter(lambda e: isinstance(e.target, MergeNode))
+        #         .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
+        #         .process(FlinkMergeOperator())
+        # )
         self.merge_op_stream = (
-            stream.filter(lambda e: isinstance(e.target, MergeNode))
+            event_stream.filter(lambda e: isinstance(e.target, CollectNode))
                 .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
-                .process(FlinkMergeOperator())
+                .process(FlinkCollectOperator())
         )
         """Stream that ingests events with an `cascade.dataflow.dataflow.MergeNode` target"""
 
+        self.stateless_op_streams = []
         self.stateful_op_streams = []
         """List of stateful operator streams, which gets appended at `add_operator`."""
 
         self.producer = Producer({'bootstrap.servers': kafka_broker})
     
-    def add_operator(self, op: FlinkOperator):
+    def add_operator(self, flink_op: FlinkOperator):
         """Add a `FlinkOperator` to the Flink datastream."""
+       
         op_stream = (
-            self.stateful_op_stream.filter(lambda e: e.target.cls == op.operator._cls)
+            self.stateful_op_stream.filter(lambda e: e.target.operator.entity == flink_op.operator.entity)
                 .key_by(lambda e: e.key_stack[-1])
-                .process(op)
+                .process(flink_op)
             )
         self.stateful_op_streams.append(op_stream)
+
+    def add_stateless_operator(self, flink_op: FlinkStatelessOperator):
+        """Add a `FlinkStatlessOperator` to the Flink datastream."""
+       
+        op_stream = (
+            self.stateless_op_stream
+                .process(flink_op)
+            )
+        self.stateless_op_streams.append(op_stream)
 
     def send(self, event: Event, flush=False):
         """Send an event to the Kafka source.
@@ -269,7 +463,21 @@ class FlinkRuntime():
         assert self.env is not None, "FlinkRuntime must first be initialised with `init()`."
 
         # Combine all the operator streams
-        ds = self.merge_op_stream.union(*self.stateful_op_streams)
+        operator_streams = self.merge_op_stream.union(*self.stateful_op_streams).union(*self.stateless_op_streams)
+        
+        # Add filtering for nodes with a `Filter` target
+        full_stream_filtered = (
+            operator_streams
+                .filter(lambda e: isinstance(e, Event) and isinstance(e.target, Filter))
+                .filter(lambda e: e.target.filter_fn())    
+        )
+        full_stream_unfiltered = (
+            operator_streams
+                .filter(lambda e: not (isinstance(e, Event) and isinstance(e.target, Filter)))
+        )
+        ds = full_stream_filtered.union(full_stream_unfiltered)
+
+        # Output the stream
         if collect:
             ds_external = ds.filter(lambda e: isinstance(e, EventResult)).execute_and_collect() 
         else:
