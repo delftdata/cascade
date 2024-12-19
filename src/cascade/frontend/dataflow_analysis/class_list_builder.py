@@ -2,7 +2,7 @@
 from klara.core.ssa_visitors import AstVisitor
 from klara.core.nodes import ClassDef
 from klara.core.nodes import ClassDef, Module
-from klara.core.cfg import Cfg, RawBasicBlock, FunctionLabel
+from klara.core.cfg import Cfg, RawBasicBlock 
 
 
 from cascade.frontend.dataflow_analysis.class_list import ClassList

@@ -3,7 +3,7 @@ from copy import copy
 
 import networkx as nx
 
-from cascade.frontend.intermediate_representation import Block, Statement, StatementDataflowGraph
+from cascade.frontend.intermediate_representation import Statement, StatementDataflowGraph
 from cascade.frontend.generator.split_function import SplitFunction
 from cascade.frontend.ast_visitors.replace_name import ReplaceName
 

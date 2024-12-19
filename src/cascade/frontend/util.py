@@ -47,21 +47,6 @@ def setup_cfg(code: str) -> Cfg:
         cfg.convert_to_ssa()
         return cfg
 
-if __name__ == '__main__':
-    from textwrap import dedent
-    from dataflow_graph_builder import construct_dataflow_graph
-
-    example_1 = dedent("""\
-                        def function(x):
-                            a = g(x)
-                            b = h(x)
-                            c = f(b)
-                            a = a + 1
-                            res = a + b
-                            return c + res
-                            """)
-    G = construct_dataflow_graph(example_1)
-    plot_graph_with_color(G)
 
 def to_camel_case(name):
     return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
