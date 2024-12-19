@@ -4,7 +4,6 @@ from copy import copy
 import networkx as nx
 
 from cascade.frontend.intermediate_representation import Block, Statement, StatementDataflowGraph
-from cascade.frontend.generator.unparser import Unparser
 from cascade.frontend.generator.split_function import SplitFunction
 from cascade.frontend.ast_visitors.replace_name import ReplaceName
 
@@ -27,7 +26,8 @@ class GenerateSplittFunctions:
         entry_node: Statement = next(iter(G.nodes))
         assert type(entry_node.block) == nodes.FunctionDef
         # targets = copy.copy(entry_node.targets)
-        while self.invokes_remote_entity(list(G.nodes)):
+        continuation = list(G.nodes)
+        while self.invokes_remote_entity(continuation):
             first_half, continuation = self.split_fuction(G)
             self.add_split_function(first_half)
             G = G.subgraph(continuation)

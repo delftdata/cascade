@@ -4,30 +4,20 @@ from klara.core import nodes
 
 from cascade.frontend. intermediate_representation import Statement
 
-
-class Unparser:
-
-    @staticmethod
-    def unparse(statements: list[Statement]):
-        statements_as_string = []
-        for s in statements:
-            statements_as_string.append(Unparser.unparse_block(s.block))
-        return '\n'.join(statements_as_string)
-    
-    @staticmethod
-    def unparse_block(block: RawBasicBlock):
-        match type(block):
-            case nodes.Return:
-                block: nodes.Return
-                string: str = f'return {block.value}'
-            case nodes.AugAssign:
-                block: nodes.AugAssign
-                string: str = f'{repr(block.target)} {block.op}= {repr(block.value)}'
-            case nodes.Assign:
-                block: nodes.Assign
-                target, *rest = block.targets
-                string: str = f'{repr(target)} = {repr(block.value)}'
-            # case nodes.FunctionDef:
-            case _:
-                string = str(block)
-        return string
+def unparse(block: RawBasicBlock):
+    match type(block):
+        case nodes.Return:
+            return f'return {unparse(block.value)}'
+        case nodes.AugAssign:
+            block: nodes.AugAssign
+            return f'{unparse(block.target)} {block.op}= {unparse(block.value)}'
+        case nodes.Assign:
+            target, *rest = block.targets
+            return f'{repr(target)} = {unparse(block.value)}'
+        # case nodes.FunctionDef:
+        case nodes.Attribute:
+            return f'{block.value}.{block.attr}'
+        case nodes.Name:
+            return repr(block)
+        case _:
+            return str(block)

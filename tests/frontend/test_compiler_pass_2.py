@@ -1,5 +1,5 @@
 from cascade.frontend.intermediate_representation import StatementDataflowGraph
-from cascade.frontend.generator.compiler_pass_3 import CompilerPass3
+from cascade.frontend.generator.compiler_pass_3 import BuildCompiledMethodsString
 from textwrap import dedent
 from cascade.frontend.util import setup_cfg
 from cascade.frontend.dataflow_analysis.class_list_builder import ClassListBuilder
@@ -46,11 +46,24 @@ def test_simple():
 
     print(df.adjacency_list)
 
-    cp2 = CompilerPass3(split_functions)
-    bodies= cp2.make_splitfunctions()
-    for b in bodies:
-        print('\nsplit:')
-        print(b)
+    compiled_methods: str = BuildCompiledMethodsString.build(split_functions)
+    print(compiled_methods)
+    
+    print("-"*100)
+    print('ITEM: ')
+    class_name: str = 'Item'
+    entity_1: ClassWrapper = class_list.get_class_by_name(class_name)
+    dataflow_graph: StatementDataflowGraph = entity_1.methods['get_price']
+    split_functions = GenerateSplittFunctions.generate(dataflow_graph, class_name)
+    df: DataFlow = GenerateDataflow.generate(split_functions, dataflow_graph.instance_type_map)
+    print('dataflow nodes:')
+    for n in df.nodes.values():
+        print(n)
+
+    print(df.adjacency_list)
+
+    compiled_methods: str = BuildCompiledMethodsString.build(split_functions)
+    print(compiled_methods)
     assert False
 
 # """

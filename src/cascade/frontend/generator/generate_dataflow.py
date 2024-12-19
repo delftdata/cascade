@@ -23,6 +23,7 @@ class GenerateDataflow:
         nodes = []
         for split in self.split_functions:
             node = OpNode(split.class_name, InvokeMethod(split.method_name))
+            self.df.add_node(node)
             nodes.append([node])
 
             if split.remote_calls:

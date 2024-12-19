@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from cascade.frontend.util import to_camel_case
 from cascade.frontend.intermediate_representation import Statement
 from cascade.frontend.ast_visitors.replace_name import ReplaceName
-from cascade.frontend.generator.unparser import Unparser
+from cascade.frontend.generator.unparser import unparse
 from cascade.frontend.generator.remote_call import RemoteCall
 
 from klara.core.cfg import RawBasicBlock
@@ -23,8 +23,17 @@ class SplitFunction:
 
     def set_class_name(self, name: str):
         self.class_name = name
-
+    
     def to_string(self) -> str:
+        body: str = indent(self.body_to_string(), '\t')
+        method_signature: str = self.get_method_signature()
+        compiled_method_as_string: str = f'def {self.method_name}_compiled({method_signature}) -> Any: \n {body}'
+        return compiled_method_as_string
+
+    def get_method_signature(self) -> str:
+        return f'variable_map: dict[str, Any], state: {self.class_name}, key_stack: list[str]'  
+
+    def body_to_string(self) -> str:
         body = []
         for v in self.values:
             if not (v in [ 'self_0','self']):
@@ -44,7 +53,7 @@ class SplitFunction:
                 
                 if type(block) == nodes.Return:
                     body.append('key_stack.pop()') 
-                body.append(Unparser.unparse_block(block))
+                body.append(unparse(block))
         return "\n".join(body)
 
     def extract_remote_method_calls(self):
