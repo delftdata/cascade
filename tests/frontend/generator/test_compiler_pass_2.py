@@ -7,7 +7,7 @@ from cascade.frontend.dataflow_analysis.class_wrapper import ClassWrapper
 from cascade.frontend.dataflow_analysis.class_list import ClassList
 from cascade.frontend.generator.generate_split_functions import GenerateSplittFunctions
 from cascade.frontend.generator.generate_dataflow import GenerateDataflow
-from cascade.dataflow.dataflow import DataFlow
+from cascade.dataflow.dataflow import DataFlow, OpNode, InvokeMethod, Edge
 
 expected_compiled_methods = """\
 def buy_item_0_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
@@ -24,6 +24,18 @@ def get_price_0_compiled(variable_map: dict[str, Any], state: Item, key_stack: l
     key_stack.pop()
     return state.price\
 """
+
+
+def user_buy_item_df():
+    df = DataFlow("user.buy_item")
+    n0 = OpNode(User, InvokeMethod("buy_item_0"))
+    n1 = OpNode(Item, InvokeMethod("get_price"), assign_result_to="item_price")
+    n2 = OpNode(User, InvokeMethod("buy_item_1"))
+    df.add_edge(Edge(n0, n1))
+    df.add_edge(Edge(n1, n2))
+    df.entry = n0
+    return df
+
 
 def test_simple():
 
@@ -94,13 +106,3 @@ def test_simple():
 #     {
 #         "buy_item": user_buy_item_df()
 #     })
-
-# def user_buy_item_df():
-#     df = DataFlow("user.buy_item")
-#     n0 = OpNode(User, InvokeMethod("buy_item_0"))
-#     n1 = OpNode(Item, InvokeMethod("get_price"), assign_result_to="item_price")
-#     n2 = OpNode(User, InvokeMethod("buy_item_1"))
-#     df.add_edge(Edge(n0, n1))
-#     df.add_edge(Edge(n1, n2))
-#     df.entry = n0
-#     return df

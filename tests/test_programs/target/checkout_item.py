@@ -1,3 +1,6 @@
+import cascade
+
+@cascade.cascade
 class User:
     def __init__(self, key: str, balance: int):
         self.key: str = key
@@ -8,6 +11,7 @@ class User:
         self.balance -= item_price
         return self.balance >= 0
 
+@cascade.cascade
 class Item:
     def __init__(self, key: str, price: int):
         self.key: str = key
