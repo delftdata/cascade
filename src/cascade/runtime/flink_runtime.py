@@ -285,7 +285,7 @@ class ByteSerializer(SerializationSchema, DeserializationSchema):
 
 class FlinkRuntime():
     """A Runtime that runs Dataflows on Flink."""
-    def __init__(self, topic="input-topic"):
+    def __init__(self, topic="input-topic", ui_port: Optional[int] = None):
         self.env: Optional[StreamExecutionEnvironment] = None
         """@private"""
 
@@ -301,6 +301,11 @@ class FlinkRuntime():
         Useful for running multiple instances concurrently, for example during 
         tests.
         """
+
+        self.ui_port = ui_port
+        """The port to run the Flink web UI on.
+
+        Warning that this does not work well with run(collect=True)!"""
 
     def init(self, kafka_broker="localhost:9092", bundle_time=1, bundle_size=5):
         """Initialise & configure the Flink runtime. 
@@ -323,7 +328,8 @@ class FlinkRuntime():
         """
         config = Configuration()
         # Add the Flink Web UI at http://localhost:8081
-        # config.set_string("rest.port", "8081")
+        if self.ui_port is not None:
+            config.set_string("rest.port", str(self.ui_port))
         config.set_integer("python.fn-execution.bundle.time", bundle_time)
         config.set_integer("python.fn-execution.bundle.size", bundle_size)
 
@@ -374,9 +380,10 @@ class FlinkRuntime():
                     "Kafka Source"
                 )
                 .map(lambda x: pickle.loads(x))
-                # .filter(lambda e: isinstance(e, Event)) # Enforced by `add_operator` type safety
+                .name("DESERIALIZE")
+                # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
             )
-        
+             
         # Events with a `SelectAllNode` will first be processed by the select 
         # all operator, which will send out multiple other Events that can
         # then be processed by operators in the same steam.
@@ -384,7 +391,7 @@ class FlinkRuntime():
             event_stream.filter(lambda e: 
                     isinstance(e.target, SelectAllNode) or isinstance(e.target, FlinkRegisterKeyNode))
                 .key_by(lambda e: e.target.cls)
-                .process(FlinkSelectAllOperator())
+                .process(FlinkSelectAllOperator()).name("SELECT ALL OP")
         )
         """Stream that ingests events with an `SelectAllNode` or `FlinkRegisterKeyNode`"""
         not_select_all_stream = (
@@ -392,9 +399,9 @@ class FlinkRuntime():
                     not (isinstance(e.target, SelectAllNode) or isinstance(e.target, FlinkRegisterKeyNode)))
         )
 
-        event_stream = select_all_stream.union(not_select_all_stream)
+        event_stream_2 = select_all_stream.union(not_select_all_stream)
 
-        operator_stream = event_stream.filter(lambda e: isinstance(e.target, OpNode))
+        operator_stream = event_stream_2.filter(lambda e: isinstance(e.target, OpNode)).name("OPERATOR STREAM")
 
         self.stateful_op_stream = (
             operator_stream
@@ -415,6 +422,7 @@ class FlinkRuntime():
             event_stream.filter(lambda e: isinstance(e.target, CollectNode))
                 .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
                 .process(FlinkCollectOperator())
+                .name("Collect")
         )
         """Stream that ingests events with an `cascade.dataflow.dataflow.MergeNode` target"""
 
@@ -431,6 +439,7 @@ class FlinkRuntime():
             self.stateful_op_stream.filter(lambda e: e.target.operator.entity == flink_op.operator.entity)
                 .key_by(lambda e: e.key_stack[-1])
                 .process(flink_op)
+                .name("STATEFUL OP: " + flink_op.operator.entity.__name__)
             )
         self.stateful_op_streams.append(op_stream)
 
@@ -440,6 +449,7 @@ class FlinkRuntime():
         op_stream = (
             self.stateless_op_stream
                 .process(flink_op)
+                .name("STATELESS DATAFLOW: " + flink_op.operator.dataflow.name)
             )
         self.stateless_op_streams.append(op_stream)
 
@@ -482,7 +492,7 @@ class FlinkRuntime():
             ds_external = ds.filter(lambda e: isinstance(e, EventResult)).execute_and_collect() 
         else:
             ds_external = ds.filter(lambda e: isinstance(e, EventResult)).print() #.add_sink(kafka_external_sink) 
-        ds_internal = ds.filter(lambda e: isinstance(e, Event)).sink_to(self.kafka_internal_sink)
+        ds_internal = ds.filter(lambda e: isinstance(e, Event)).sink_to(self.kafka_internal_sink).name("INTERNAL KAFKA SINK")
 
         if run_async:
             self.env.execute_async("Cascade: Flink Runtime")

@@ -112,7 +112,7 @@ def test_nearby_hotels():
     hotels = []
     init_hotel = OpNode(hotel_op, InitClass())
     random.seed(42)
-    for i in range(5):
+    for i in range(20):
         coord_x = random.randint(-10, 10)
         coord_y = random.randint(-10, 10)
         hotel = Hotel(f"h_{i}", Geo(coord_x, coord_y))
