@@ -13,6 +13,7 @@ from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from cascade.runtime.flink_runtime import FlinkOperator, FlinkRuntime, FlinkStatelessOperator
 from confluent_kafka import Producer
 import time
+import pytest
 
 @dataclass
 class Geo:
@@ -65,7 +66,7 @@ def get_nearby_predicate_compiled_1(variable_map: dict[str, Any], key_stack: lis
     loc = variable_map["loc"]
     dist = variable_map["dist"]
     hotel_dist = variable_map["hotel_distance"]
-    # key_stack.pop() # shouldn't pop because this functino is stateless
+    # key_stack.pop() # shouldn't pop because this function is stateless
     return hotel_dist < dist
 
 def get_nearby_body_compiled_0(variable_map: dict[str, Any], key_stack: list[str]):
@@ -102,6 +103,7 @@ df.add_edge(Edge(n5, n6))
 df.add_edge(Edge(n6, n7))
 get_nearby_op.dataflow = df
 
+@pytest.mark.integration
 def test_nearby_hotels():
     runtime = FlinkRuntime("test_nearby_hotels")
     runtime.init()
@@ -128,11 +130,22 @@ def test_nearby_hotels():
             print(f"Collected record: {record}")
             if record.event_id == id:
                 return record
+            
+    def wait_for_n_records(num: int) -> list[EventResult]:
+        i = 0
+        n_records = []
+        for record in collected_iterator:
+            i += 1
+            records.append(record)
+            n_records.append(record)
+            print(f"Collected record: {record}")
+            if i == num:
+                return n_records
 
     print("creating hotels")
     # Wait for hotels to be created
-    wait_for_event_id(event._id)
-    time.sleep(1) # wait for all hotels to be registered
+    wait_for_n_records(20)
+    time.sleep(3) # wait for all hotels to be registered
 
     dist = 5
     loc = Geo(0, 0)

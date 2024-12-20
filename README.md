@@ -16,6 +16,12 @@ Integration tests require Kafka to be running (with `docker compose up`):
 pytest -m integration
 ```
 
+To view with debug logs:
+
+```
+pytest -m integration -s --log-level=DEBUG
+```
+
 
 ### Documentation
 

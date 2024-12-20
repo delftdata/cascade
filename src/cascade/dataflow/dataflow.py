@@ -46,6 +46,8 @@ class OpNode(Node):
     assign_result_to: Optional[str] = None
     is_conditional: bool = False
     """Whether or not the boolean result of this node dictates the following path."""
+    collect_target: Optional['CollectTarget'] = None
+    """Whether the result of this node should go to a CollectNode."""
 
 @dataclass
 class SelectAllNode(Node):
@@ -217,11 +219,16 @@ class Event():
             if not isinstance(keys, list):
                 keys = [keys]
             
+            collect_targets: list[Optional[CollectTarget]]
             # Events with SelectAllNodes need to be assigned a CollectTarget
             if isinstance(self.target, SelectAllNode):
                 collect_targets = [
                     CollectTarget(self.target.collect_target, len(keys), i)
                     for i in range(len(keys))
+                ]
+            elif isinstance(self.target, OpNode) and self.target.collect_target is not None:
+                collect_targets = [
+                    self.target.collect_target for i in range(len(keys))
                 ]
             else:
                 collect_targets = [self.collect_target for i in range(len(keys))]

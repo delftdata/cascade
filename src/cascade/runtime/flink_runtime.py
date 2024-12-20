@@ -326,6 +326,7 @@ class FlinkRuntime():
             processing the next bundle of elements. A larger value can improve
             throughput but at the cost of more memory usage and higher latency.
         """
+        logger.debug("FlinkRuntime initializing...")
         config = Configuration()
         # Add the Flink Web UI at http://localhost:8081
         if self.ui_port is not None:
@@ -431,6 +432,7 @@ class FlinkRuntime():
         """List of stateful operator streams, which gets appended at `add_operator`."""
 
         self.producer = Producer({'bootstrap.servers': kafka_broker})
+        logger.debug("FlinkRuntime initialized")
     
     def add_operator(self, flink_op: FlinkOperator):
         """Add a `FlinkOperator` to the Flink datastream."""
@@ -471,6 +473,7 @@ class FlinkRuntime():
         `cascade.dataflow.dataflow.EventResult`s."""
 
         assert self.env is not None, "FlinkRuntime must first be initialised with `init()`."
+        logger.debug("FlinkRuntime merging operator streams...")
 
         # Combine all the operator streams
         operator_streams = self.merge_op_stream.union(*self.stateful_op_streams).union(*self.stateless_op_streams)
@@ -495,7 +498,9 @@ class FlinkRuntime():
         ds_internal = ds.filter(lambda e: isinstance(e, Event)).sink_to(self.kafka_internal_sink).name("INTERNAL KAFKA SINK")
 
         if run_async:
+            logger.debug("FlinkRuntime starting (async)")
             self.env.execute_async("Cascade: Flink Runtime")
             return ds_external # type: ignore (will be CloseableIterator provided the source is unbounded (i.e. Kafka))
         else:
+            logger.debug("FlinkRuntime starting (sync)")
             self.env.execute("Cascade: Flink Runtime")
