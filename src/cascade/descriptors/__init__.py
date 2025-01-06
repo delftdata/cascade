@@ -1,1 +1,2 @@
 from .class_descriptor import ClassDescriptor
+from .method_descriptor import MethodDescriptor

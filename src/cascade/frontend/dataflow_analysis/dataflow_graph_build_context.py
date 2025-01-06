@@ -2,7 +2,6 @@ from dataclasses import dataclass
 
 @dataclass
 class DataflowGraphBuildContext:
-    scope: str
     entity_list: list[str]
     instance_type_map: dict[str, str] # {"instance_name": "EntityType"} 
 
