@@ -56,9 +56,11 @@ def init():
         for method in cls.class_desc.methods_dec:
             method.build_dataflow()
 
+
 def get_entity_names() -> str:
     """Returns a list with the names of all registered entities"""
     return [cls.class_desc.class_name for cls in registered_classes]
+
 
 def get_compiled_methods() -> str:
     """Returns a list with the compiled methods as string"""
@@ -76,6 +78,7 @@ def get_compiled_methods() -> str:
             compiled_methods.append(class_compiled_methods)
 
     return '\n\n'.join(compiled_methods)
+
 
 def clear():
     registered_classes.clear()

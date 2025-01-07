@@ -36,12 +36,7 @@ class GenerateSplittFunctions:
         targets, values = set(), set()
         for s in statements:
             targets.update(repr(v) for v in s.targets)
-            if s.is_remote():
-                for v in s.values:
-                    if not self.value_is_entity(v):
-                        values.update(repr(v))
-                # values.update(repr(v) for v in s.values if not self.value_is_entity(v))
-            elif type(s.block) != nodes.FunctionDef:
+            if s.is_remote() or type(s.block) != nodes.FunctionDef:
                 values.update(repr(v) for v in s.values if not self.value_is_entity(v))
         i: int = next(self.counter)
         method_name = f'{self.dataflow_graph.name}_{i}'
