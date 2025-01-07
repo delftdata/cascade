@@ -1,6 +1,5 @@
 from inspect import isclass, getsource, getfile
-from typing import List, Dict
-import textwrap
+from typing import Dict
 
 from klara.core import nodes
 from klara.core.tree_rewriter import AstBuilder
@@ -53,10 +52,9 @@ def cascade(cls, parse_file=True):
     registered_classes.append(class_wrapper)
 
 def init():
-     entity_list: list[str] = get_entity_names()
      for cls in registered_classes:
         for method in cls.class_desc.methods_dec:
-            method.build_dataflow(entity_list)
+            method.build_dataflow()
 
 def get_entity_names() -> str:
     """Returns a list with the names of all registered entities"""

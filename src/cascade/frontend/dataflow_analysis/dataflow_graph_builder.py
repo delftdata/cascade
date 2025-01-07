@@ -16,10 +16,9 @@ class DataflowGraphBuilder:
     def __init__(self, block_list: list, build_context: DataflowGraphBuildContext):
         self.block_list: list = block_list
         self.build_context: DataflowGraphBuildContext = build_context
-        self.color: int = 2 # self is alsways annotated with 1.
-        self.entity_map: dict[str, int] = {} # e.g. item_1 -> 2
 
     def extract_statment_list(self):
+        # TODO: This one should be extended with recursion to handle if/else branches
         statements = []
         i = 0
         for b in self.block_list:
@@ -44,39 +43,12 @@ class DataflowGraphBuilder:
                 statement.values = values
                 contains_attribute, attribute = ContainsAttributeVisitor.check_return_attribute(b)
                 if contains_attribute:
-                    if attribute.value.id == 'self':
-                        color: int = self.get_scope_color()
-                        statement.set_color(color)
-                    else:
-                        color: int = self.get_color_for_var_name(attribute.value.id)
-                        statement.set_color(color)
+                    if attribute.value.id != 'self':
                         statement.set_remote()
 
                     statement.set_attribute(attribute)
         return statements
     
-    def get_color_for_var_name(self, name: str) -> int:
-        if name in self.entity_map:
-            return self.entity_map[name]
-        if self.build_context.is_entity(name):
-            color = self.color
-            self.update_entity_map(name, color)
-            self.color += 1
-            return color
-        return 0
-    
-    def update_entity_map(self, name: str, color: int):
-        self.entity_map[name] = color
-    
-    def get_color_type_map(self) -> dict[int, str]:
-        buildContext: DataflowGraphBuildContext = self.build_context
-        color_type_map: dict[int, str] = {}
-        for name, color in self.entity_map.items():
-            entity_name = buildContext.get_entity_for_var_name(name)
-            color_type_map[color] = entity_name
-        return color_type_map
-
-
     def get_scope_color(self):
         """ Scope self should always have color 1
         """
@@ -93,18 +65,8 @@ class DataflowGraphBuilder:
                     values = set(repr(b) for b in b2.values)
                     if targets.intersection(values):
                         G.add_edge(b1, b2)
-        self.set_source_color(G)
         return StatementDataflowGraph(G, self.build_context.instance_type_map)
     
-    def set_source_color(self, G):
-        """ Assume the source node should be colored the same color as self (i.e. scope_color)"""
-        source: Statement = self.get_source_node(G)
-        source.set_color(self.get_scope_color())
-    
-    def get_source_node(self, G):
-        """Assumes the source node is the first node"""
-        return next(iter(G.nodes))
-
     @classmethod
     def build(cls, block_list: list, build_context: DataflowGraphBuildContext) -> StatementDataflowGraph:
         dataflow_graph_builder = cls(block_list, build_context)

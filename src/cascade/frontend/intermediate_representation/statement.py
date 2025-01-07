@@ -11,7 +11,6 @@ class Statement:
     values: list[str] = field(default_factory=list)
     remote_call: bool = False
     attribute: Attribute = None
-    color: int = 0
 
     def extend_targets(self, new_targets: list[str]):
         self.targets.extend(new_targets)
@@ -28,9 +27,6 @@ class Statement:
     
     def set_attribute(self, attribute: Attribute):
         self.attribute = attribute
-    
-    def set_color(self, color: int):
-        self.color = color
     
     def is_remote(self) -> bool:
         return self.remote_call
