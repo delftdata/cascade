@@ -35,7 +35,7 @@ def cascade(cls, parse_file=True):
     if parse_file:
         class_file_name = getfile(cls)
         if class_file_name not in parse_cache:
-            with open(getfile(cls), "r") as file:
+            with open(class_file_name, "r") as file:
                 to_parse_file = file.read()
                 # parsed_cls = AstBuilder().string_build(to_parse_file)
                 parsed_cls, tree = setup_cfg(to_parse_file)
@@ -51,8 +51,9 @@ def cascade(cls, parse_file=True):
     class_wrapper: ClassWrapper = ClassWrapper(cls, class_desc)
     registered_classes.append(class_wrapper)
 
+
 def init():
-     for cls in registered_classes:
+    for cls in registered_classes:
         for method in cls.class_desc.methods_dec:
             method.build_dataflow()
 
@@ -82,3 +83,4 @@ def get_compiled_methods() -> str:
 
 def clear():
     registered_classes.clear()
+    parse_cache.clear()

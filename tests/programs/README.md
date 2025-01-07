@@ -1,3 +1,2 @@
-# Test Programs
-
-This test module takes programs from target and checks if they are similar to the programs in compiled folder.
+# Test programs
+`test_programs.py` scans files in ./target folder, compiles them and tests them to expected.

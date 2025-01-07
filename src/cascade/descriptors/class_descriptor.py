@@ -26,7 +26,7 @@ class ClassDescriptor:
 
     @classmethod
     def from_module(cls, class_name: str, module_node: nodes.Module):
-        class_node = nodes.ClassDef = ExtractClassDefNode.extract(module_node, class_name)
+        class_node: nodes.ClassDef = ExtractClassDefNode.extract(module_node, class_name)
         method_dec: list[MethodDescriptor] = ExtractMethodVisitor.extract(class_node)
         c = cls(class_name, module_node, class_node, method_dec)
         return c
