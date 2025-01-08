@@ -46,6 +46,6 @@ def test_simple_dataflow_graph():
         (buy_item, buy_item_body_0),
         (buy_item, buy_item_body_1),
         (buy_item, buy_item_body_2),
-        (buy_item_body_0, buy_item_body_1) 
+        (buy_item_body_0, buy_item_body_1)
     ]
     assert_expected_edges(df, expected_edges)
