@@ -11,10 +11,11 @@ from klara.core.cfg import RawBasicBlock
 
 class GenerateSplittFunctions:
 
-    def __init__(self, dataflow_graph: StatementDataflowGraph, class_name: str, entities: list[str]):
+    def __init__(self, dataflow_graph: StatementDataflowGraph, class_name: str, entities: list[str], instance_type_map: dict[str, str]):
         self.dataflow_graph: StatementDataflowGraph = dataflow_graph
         self.class_name: str = class_name
         self.entities: list[str] = entities
+        self.instance_type_map: dict[str, str] = instance_type_map # {"instance_name": "EntityType"}
         self.dataflow_node_map = dict()
         self.counter = count()
         self.split_functions = []
@@ -45,7 +46,7 @@ class GenerateSplittFunctions:
     
     def value_is_entity(self, value: nodes.Name) -> bool:
         value_id = value.id
-        instance_type_map: dict[str,str] = self.dataflow_graph.instance_type_map
+        instance_type_map: dict[str,str] = self.instance_type_map
         if not value_id in instance_type_map:
             return False
         entity_type: str = instance_type_map[value_id]
@@ -94,7 +95,7 @@ class GenerateSplittFunctions:
         return nx.all_simple_paths(G, source=source, target=target)
 
     @classmethod
-    def generate(cls, dataflow_graph: StatementDataflowGraph, class_name: str, entities: list[str]):
-        c = cls(dataflow_graph, class_name, entities)
+    def generate(cls, dataflow_graph: StatementDataflowGraph, class_name: str, entities: list[str], instance_type_map: dict[str, str]):
+        c = cls(dataflow_graph, class_name, entities, instance_type_map)
         c.generate_split_functions()
         return c.split_functions

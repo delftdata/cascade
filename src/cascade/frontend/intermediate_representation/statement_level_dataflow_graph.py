@@ -8,7 +8,7 @@ class StatementDataflowGraph:
         The nodes of the graph are Statements
     """
     graph: nx.DiGraph
-    instance_type_map: dict[str, str] # {"instance_name": "EntityType"}
+    instance_type_map: dict[str, str] = None # {"instance_name": "EntityType"}
     method_name: str = None
 
     def set_name(self, name: str):

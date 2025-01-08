@@ -13,7 +13,7 @@ from cascade.frontend.generator.generate_dataflow import GenerateDataflow
 from cascade.dataflow.dataflow import DataFlow 
 from cascade.frontend.intermediate_representation import StatementDataflowGraph
 from cascade.frontend.generator.build_compiled_method_string import BuildCompiledMethodsString
-
+from cascade.frontend.ast_visitors import ExtractTypeVisitor
 
 def setup_cfg(code: str) -> Cfg:
         as_tree = AstBuilder().string_build(code)
@@ -73,8 +73,9 @@ def get_compiled_methods() -> str:
             if method_desc.method_name == '__init__':
                 continue
             dataflow_graph: StatementDataflowGraph = method_desc.dataflow
-            split_functions = GenerateSplittFunctions.generate(dataflow_graph, cls_desc.class_name, entities)
-            df: DataFlow = GenerateDataflow.generate(split_functions, dataflow_graph.instance_type_map)
+            instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
+            split_functions = GenerateSplittFunctions.generate(dataflow_graph, cls_desc.class_name, entities, instance_type_map)
+            df: DataFlow = GenerateDataflow.generate(split_functions, instance_type_map)
             class_compiled_methods: str = BuildCompiledMethodsString.build(split_functions)
             compiled_methods.append(class_compiled_methods)
 

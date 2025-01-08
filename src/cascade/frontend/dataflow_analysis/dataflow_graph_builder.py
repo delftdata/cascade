@@ -6,16 +6,12 @@ from klara.core.nodes import Name, FunctionDef
 
 from cascade.frontend.intermediate_representation import Statement, StatementDataflowGraph
 from cascade.frontend.ast_visitors import ContainsAttributeVisitor, VariableGetter
-from cascade.frontend.dataflow_analysis.dataflow_graph_build_context import DataflowGraphBuildContext
 
 
 class DataflowGraphBuilder:
 
-    scope_color = 1
-
-    def __init__(self, block_list: list, build_context: DataflowGraphBuildContext):
+    def __init__(self, block_list: list):
         self.block_list: list = block_list
-        self.build_context: DataflowGraphBuildContext = build_context
 
     def extract_statment_list(self):
         # TODO: This one should be extended with recursion to handle if/else branches
@@ -49,11 +45,6 @@ class DataflowGraphBuilder:
                     statement.set_attribute(attribute)
         return statements
     
-    def get_scope_color(self):
-        """ Scope self should always have color 1
-        """
-        return self.scope_color
-    
     def construct_dataflow_graph(self) -> StatementDataflowGraph:
         statements = self.extract_statment_list()
         G = nx.DiGraph()
@@ -65,9 +56,9 @@ class DataflowGraphBuilder:
                     values = set(repr(b) for b in b2.values)
                     if targets.intersection(values):
                         G.add_edge(b1, b2)
-        return StatementDataflowGraph(G, self.build_context.instance_type_map)
+        return StatementDataflowGraph(G)
     
     @classmethod
-    def build(cls, block_list: list, build_context: DataflowGraphBuildContext) -> StatementDataflowGraph:
-        dataflow_graph_builder = cls(block_list, build_context)
+    def build(cls, block_list: list) -> StatementDataflowGraph:
+        dataflow_graph_builder = cls(block_list)
         return dataflow_graph_builder.construct_dataflow_graph()

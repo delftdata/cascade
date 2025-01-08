@@ -13,13 +13,11 @@ class ClassDescriptor:
         module_node: nodes.Module,
         class_node: nodes.ClassDef,
         methods_dec: list[MethodDescriptor],
-        # expression_provider,
     ):
         self.class_name: str = class_name
         self.module_node: nodes.Module = module_node
         self.class_node: nodes.ClassDef = class_node
         self.methods_dec: list[MethodDescriptor] = methods_dec
-        # self.expression_provider = expression_provider
 
     def get_method_by_name(self, name: str):
         return next(m for m in self.methods_dec if m.method_name == name)
