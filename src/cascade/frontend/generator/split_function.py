@@ -36,7 +36,7 @@ class SplitFunction:
 
     def body_to_string(self) -> str:
         body = []
-        for v in self.values - self.targets:
+        for v in sorted(self.values - self.targets):
             if not (v in [ 'self_0','self']):
                 body.append(f'{v} = variable_map[\'{v}\']')
 

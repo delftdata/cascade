@@ -3,7 +3,7 @@ import os
 import pytest 
 import cascade
 import sys
-import klara
+
 
 from tests.programs.util import compare_targets_with_expected
 

@@ -10,8 +10,8 @@ def buy_two_items_0_compiled(variable_map: dict[str, Any], state: User, key_stac
 
 def buy_two_items_1_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
     key_stack.pop()
-    item_price_2_0 = variable_map['item_price_2_0']
     item_price_1_0 = variable_map['item_price_1_0']
+    item_price_2_0 = variable_map['item_price_2_0']
     total_price_0 = item_price_1_0 + item_price_2_0
     state.balance -= total_price_0
     return state.balance >= 0
