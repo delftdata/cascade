@@ -239,6 +239,8 @@ class Event():
                 edges = self.dataflow.nodes[self.target.id].outgoing_edges
                 true_edges = [edge for edge in edges if edge.if_conditional]
                 false_edges = [edge for edge in edges if not edge.if_conditional]
+                if not (len(true_edges) == len(false_edges) == 1):
+                    print(edges)
                 assert len(true_edges) == len(false_edges) == 1
                 target_true = true_edges[0].to_node
                 target_false = false_edges[0].to_node

@@ -204,7 +204,7 @@ class FlinkCollectOperator(KeyedProcessFunction):
         if all([isinstance(r, Arrived) for r in collection]):
             logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Yielding collection")
             
-            collection = [r.val for r in collection] # type: ignore (r is of type Arrived)
+            collection = [r.val for r in collection if r.val is not None] # type: ignore (r is of type Arrived)
             event.variable_map[target_node.assign_result_to] = collection
             new_events = event.propogate(event.key_stack, collection)
 
@@ -446,10 +446,11 @@ class FlinkRuntime():
         self.stateful_op_streams.append(op_stream)
 
     def add_stateless_operator(self, flink_op: FlinkStatelessOperator):
-        """Add a `FlinkStatlessOperator` to the Flink datastream."""
+        """Add a `FlinkStatelessOperator` to the Flink datastream."""
        
         op_stream = (
             self.stateless_op_stream
+                .filter(lambda e: e.target.operator.dataflow.name == flink_op.operator.dataflow.name)
                 .process(flink_op)
                 .name("STATELESS DATAFLOW: " + flink_op.operator.dataflow.name)
             )
