@@ -11,7 +11,7 @@ from multiprocessing import Pool
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from cascade.dataflow.dataflow import Event, InitClass, InvokeMethod, OpNode
-from cascade.runtime.flink_runtime import FlinkOperator, FlinkRuntime, FlinkStatelessOperator
+from cascade.runtime.flink_runtime import FlinkClientSync, FlinkOperator, FlinkRuntime, FlinkStatelessOperator
 from deathstar.entities.flight import Flight, flight_op
 from deathstar.entities.hotel import Geo, Hotel, Rate, hotel_op
 from deathstar.entities.recommendation import Recommendation, recommend_op
@@ -19,12 +19,12 @@ from deathstar.entities.search import Search, search_op
 from deathstar.entities.user import User, user_op
 
 
-class DeathStarDemo():
-    def __init__(self, name):
+class DeathstarDemo():
+    def __init__(self, input_topic, output_topic):
         self.init_user = OpNode(user_op, InitClass())
         self.init_hotel = OpNode(hotel_op, InitClass())
         self.init_flight = OpNode(flight_op, InitClass())
-        self.runtime = FlinkRuntime(name)
+        self.runtime = FlinkRuntime(input_topic, output_topic)
     
     def init_runtime(self):
         self.runtime.init(bundle_time=100, bundle_size=1000)
@@ -176,20 +176,13 @@ class DeathStarDemo():
         }, None)
         self.runtime.send(event, flush=True)
 
-class Client:
-    def __init__(self, topic="input-topic", kafka_broker="localhost:9092"):
+class DeathstarClient:
+    def __init__(self, input_topic="input-topic", output_topic="output-topic", kafka_broker="localhost:9092"):
+        self.client = FlinkClientSync(input_topic, output_topic, kafka_broker, True)
         self.producer = Producer({'bootstrap.servers': kafka_broker})
-        self.topic = topic
 
-    def send(self, event: Event, flush=False):
-        """Send an event to the Kafka source.
-        Once `run` has been called, the Flink runtime will start ingesting these 
-        messages. Messages can always be sent after `init` is called - Flink 
-        will continue ingesting messages after `run` is called asynchronously.
-        """
-        self.producer.produce(self.topic, value=pickle.dumps(event))
-        if flush:
-            self.producer.flush()
+    def send(self, event: Event, flush: bool = False):
+        return self.client.send(event, flush)
 
     def search_hotel(self):
         in_date = random.randint(9, 23)
@@ -208,8 +201,7 @@ class Client:
         lon = -122.095 + (random.randint(0, 325) - 157.0) / 1000.0
 
         # We don't really use the in_date, out_date information
-        event = Event(search_op.dataflow.entry, ["tempkey"], {"lat": lat, "lon": lon}, search_op.dataflow)
-        self.send(event)
+        return Event(search_op.dataflow.entry, ["tempkey"], {"lat": lat, "lon": lon}, search_op.dataflow)
 
     def recommend(self, req_param=None):
         if req_param is None:
@@ -222,15 +214,13 @@ class Client:
         lat = 38.0235 + (random.randint(0, 481) - 240.5) / 1000.0
         lon = -122.095 + (random.randint(0, 325) - 157.0) / 1000.0
 
-        event = Event(recommend_op.dataflow.entry, ["tempkey"], {"requirement": req_param, "lat": lat, "lon": lon}, recommend_op.dataflow)
-        self.send(event)
+        return Event(recommend_op.dataflow.entry, ["tempkey"], {"requirement": req_param, "lat": lat, "lon": lon}, recommend_op.dataflow)
 
     def user_login(self):
         user_id = random.randint(0, 500)
         username = f"Cornell_{user_id}"
         password = str(user_id) * 10
-        event = Event(OpNode(user_op, InvokeMethod("login")), [username], {"password": password}, None)
-        self.send(event)
+        return Event(OpNode(user_op, InvokeMethod("login")), [username], {"password": password}, None)
 
     def reserve(self):
         hotel_id = random.randint(0, 99)
@@ -240,8 +230,7 @@ class Client:
         # user.order(flight, hotel)
         user_id = "Cornell_" + str(random.randint(0, 500))
 
-        event = Event(user_op.dataflows["order"].entry, [user_id], {"flight": str(flight_id), "hotel": str(hotel_id)}, user_op.dataflows["order"])
-        self.send(event)
+        return Event(user_op.dataflows["order"].entry, [user_id], {"flight": str(flight_id), "hotel": str(hotel_id)}, user_op.dataflows["order"])
 
     def deathstar_workload_generator(self):
         search_ratio = 0.6
@@ -261,30 +250,31 @@ class Client:
                 yield self.reserve()
             c += 1
     
-threads = 3
+threads = 1
 messages_per_second = 100
 sleeps_per_second = 100
 sleep_time = 0.0085
-seconds = 50
+seconds = 20
 
-def benchmark_runner(proc_num) -> dict[bytes, dict]:
+
+def benchmark_runner(proc_num) -> dict[int, dict]:
     print(f'Generator: {proc_num} starting')
-    client = Client("deathstar")
+    client = DeathstarClient("deathstar", "ds-out")
     deathstar_generator = client.deathstar_workload_generator()
-    timestamp_futures: dict[bytes, dict] = {}
+    futures: dict[int, dict] = {}
     start = timer()
     for _ in range(seconds):
         sec_start = timer()
         for i in range(messages_per_second):
             if i % (messages_per_second // sleeps_per_second) == 0:
                 time.sleep(sleep_time)
-            # operator, key, func_name, params = next(deathstar_generator)
-            # future = client.send_event(operator=operator,
-            #                          key=key,
-            #                          function=func_name,
-            #                          params=params)
-            # timestamp_futures[future.request_id] = {"op": f'{func_name} {key}->{params}'}
-            next(deathstar_generator)
+            event = next(deathstar_generator)
+            func_name = event.dataflow.name if event.dataflow is not None else "login" # only login has no dataflow
+            key = event.key_stack[0]
+            params = event.variable_map
+            client.send(event)
+            futures[event._id] = {"event": f'{func_name} {key}->{params}'}
+            
         # styx.flush()
         sec_end = timer()
         lps = sec_end - sec_start
@@ -297,12 +287,14 @@ def benchmark_runner(proc_num) -> dict[bytes, dict]:
     # styx.close()
     # for key, metadata in styx.delivery_timestamps.items():
     #     timestamp_futures[key]["timestamp"] = metadata
-    return timestamp_futures
+    for event_id, result in client.client._futures.items():
+        assert event_id in futures
+        futures[event_id]["result"] = result
+    return futures
 
 
 def main():
-
-    ds = DeathStarDemo("deathstar")
+    ds = DeathstarDemo("deathstar", "ds-out")
     ds.init_runtime()
     ds.runtime.run(run_async=True)
     ds.populate()
@@ -321,6 +313,13 @@ def main():
     #               "op": [res["op"] for res in results.values()]
     #               }).sort_values("timestamp").to_csv(f'{SAVE_DIR}/client_requests.csv', index=False)
     print(results)
-
+    t = len(results)
+    r = 0
+    for result in results.values():
+        if result["result"] is not None:
+            print(result)
+            r += 1
+    print(f"{r}/{t} results recieved.")
+    
 if __name__ == "__main__":
     main()

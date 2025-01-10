@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 import os
-from typing import Optional, Type, Union
+import uuid
+import threading
+from typing import Literal, Optional, Type, Union
 from pyflink.common.typeinfo import Types, get_gateway
 from pyflink.common import Configuration, DeserializationSchema, SerializationSchema, WatermarkStrategy
 from pyflink.datastream.connectors import DeliveryGuarantee
@@ -11,7 +13,7 @@ from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 import pickle 
 from cascade.dataflow.dataflow import Arrived, CollectNode, CollectTarget, Event, EventResult, Filter, InitClass, InvokeMethod, MergeNode, Node, NotArrived, OpNode, Operator, Result, SelectAllNode
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
-from confluent_kafka import Producer
+from confluent_kafka import Producer, Consumer
 import logging
 
 logger = logging.getLogger(__name__)
@@ -285,7 +287,7 @@ class ByteSerializer(SerializationSchema, DeserializationSchema):
 
 class FlinkRuntime():
     """A Runtime that runs Dataflows on Flink."""
-    def __init__(self, topic="input-topic", ui_port: Optional[int] = None):
+    def __init__(self, input_topic="input-topic", output_topic="output-topic", ui_port: Optional[int] = None):
         self.env: Optional[StreamExecutionEnvironment] = None
         """@private"""
 
@@ -295,11 +297,12 @@ class FlinkRuntime():
         self.sent_events = 0
         """The number of events that were sent using `send()`."""
 
-        self.topic = topic
-        """The topic to use for internal communications.
+        self.input_topic = input_topic
+        """The topic to use for internal communications."""
 
-        Useful for running multiple instances concurrently, for example during 
-        tests.
+        self.output_topic = output_topic
+        """The topic to use for external communications, i.e. when a dataflow is
+        finished. As such only `EventResult`s should be contained in this topic.
         """
 
         self.ui_port = ui_port
@@ -354,7 +357,7 @@ class FlinkRuntime():
         kafka_source = (
             KafkaSource.builder()
                 .set_bootstrap_servers(kafka_broker)
-                .set_topics(self.topic)
+                .set_topics(self.input_topic)
                 .set_group_id("test_group_1")
                 .set_starting_offsets(KafkaOffsetsInitializer.earliest())
                 .set_value_only_deserializer(deserialization_schema)
@@ -365,7 +368,7 @@ class FlinkRuntime():
                 .set_bootstrap_servers(kafka_broker)
                 .set_record_serializer(
                     KafkaRecordSerializationSchema.builder()
-                        .set_topic(self.topic)
+                        .set_topic(self.input_topic)
                         .set_value_serialization_schema(deserialization_schema)
                         .build()
                     )
@@ -373,6 +376,21 @@ class FlinkRuntime():
                 .build()
         )
         """Kafka sink that will be ingested again by the Flink runtime."""
+
+        self.kafka_external_sink = (
+            KafkaSink.builder()
+                .set_bootstrap_servers(kafka_broker)
+                .set_record_serializer(
+                    KafkaRecordSerializationSchema.builder()
+                        .set_topic(self.output_topic)
+                        .set_value_serialization_schema(deserialization_schema)
+                        .build()
+                    )
+                .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                .build()
+        )
+        """Kafka sink corresponding to outputs of calls (`EventResult`s)."""
+
 
         event_stream = (
             self.env.from_source(
@@ -414,11 +432,6 @@ class FlinkRuntime():
                 .filter(lambda e: isinstance(e.target.operator, StatelessOperator))
         )
 
-        # self.merge_op_stream = (
-        #     event_stream.filter(lambda e: isinstance(e.target, MergeNode))
-        #         .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
-        #         .process(FlinkMergeOperator())
-        # )
         self.merge_op_stream = (
             event_stream.filter(lambda e: isinstance(e.target, CollectNode))
                 .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
@@ -462,12 +475,12 @@ class FlinkRuntime():
         messages. Messages can always be sent after `init` is called - Flink 
         will continue ingesting messages after `run` is called asynchronously.
         """
-        self.producer.produce(self.topic, value=pickle.dumps(event))
+        self.producer.produce(self.input_topic, value=pickle.dumps(event))
         if flush:
             self.producer.flush()
         self.sent_events += 1
 
-    def run(self, run_async=False, collect=False) -> Union[CloseableIterator, None]:
+    def run(self, run_async=False, output: Literal["collect", "kafka", "stdout"]="kafka") -> Union[CloseableIterator, None]:
         """Start ingesting and processing messages from the Kafka source.
         
         If `collect` is True then this will return a CloseableIterator over 
@@ -492,10 +505,15 @@ class FlinkRuntime():
         ds = full_stream_filtered.union(full_stream_unfiltered)
 
         # Output the stream
-        if collect:
+        if output == "collect":
             ds_external = ds.filter(lambda e: isinstance(e, EventResult)).execute_and_collect() 
+        elif output == "stdout":
+            ds_external = ds.filter(lambda e: isinstance(e, EventResult)).print()
+        elif output == "kafka":
+            ds_external = ds.filter(lambda e: isinstance(e, EventResult)).sink_to(self.kafka_external_sink).name("EXTERNAL KAFKA SINK") 
         else:
-            ds_external = ds.filter(lambda e: isinstance(e, EventResult)).print() #.add_sink(kafka_external_sink) 
+            raise ValueError(f"Invalid output: {output}")
+
         ds_internal = ds.filter(lambda e: isinstance(e, Event)).sink_to(self.kafka_internal_sink).name("INTERNAL KAFKA SINK")
 
         if run_async:
@@ -505,3 +523,70 @@ class FlinkRuntime():
         else:
             logger.debug("FlinkRuntime starting (sync)")
             self.env.execute("Cascade: Flink Runtime")
+
+class FlinkClientSync:
+    def __init__(self, input_topic="input-topic", output_topic="output-topic", kafka_url="localhost:9092", start_consumer_thread: bool = True):
+        self.producer = Producer({'bootstrap.servers': kafka_url})
+        self.input_topic = input_topic
+        self.output_topic = output_topic
+        self.kafka_url = kafka_url
+        self.is_consuming = False
+        self._futures: dict[int, Optional[EventResult]] = {} # TODO: handle timeouts?
+        """Mapping of event id's to their EventResult. None if not arrived."""
+        if start_consumer_thread:
+            self.start_consumer_thread()      
+
+    def start_consumer_thread(self):
+        self.result_consumer_process = threading.Thread(target=self.consume_results)
+        self.is_consuming = True
+        self.result_consumer_process.start()
+
+    def consume_results(self):
+        self.consumer = Consumer(
+            {
+                "bootstrap.servers": self.kafka_url, 
+                "group.id": str(uuid.uuid4()), 
+                "auto.offset.reset": "earliest",
+                # "enable.auto.commit": False,
+                # "fetch.min.bytes": 1
+            })
+        
+        self.consumer.subscribe([self.output_topic])
+
+        while self.is_consuming:
+            msg = self.consumer.poll(1.0)
+            if msg is None:
+                continue
+            if msg.error():
+                logger.error(f"Consumer error: {msg.error()}")
+                continue
+            try:
+                event_result: EventResult = pickle.loads(msg.value())
+                if event_result.event_id in self._futures:
+                    if (r := self._futures[event_result.event_id]) != None:
+                        logger.warning(f"Recieved EventResult with id {event_result.event_id} more than once: {event_result} replaced previous: {r}")
+                    self._futures[event_result.event_id] = event_result
+            except Exception as e:
+                logger.error(f"Consumer deserializing error: {e}")
+                
+        
+        self.consumer.close()
+
+    def send(self, event: Event, flush=False) -> int:
+        """Send an event to the Kafka source and block until an EventResult is recieved.
+
+        :param event: The event to send.
+        :param flush: Whether to flush the producer after sending.
+        :return: The result event if recieved
+        :raises Exception: If an exception occured recieved or deserializing the message.
+        """
+        self.producer.produce(self.input_topic, value=pickle.dumps(event))
+        if flush:
+            self.producer.flush()
+
+        self._futures[event._id] = None
+        return event._id    
+
+    def close(self):
+        self.producer.flush()
+        self.is_consuming = False
