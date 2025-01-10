@@ -44,6 +44,7 @@ def plot_dataflow_graph(G: nx.DiGraph, grey_background: bool = True):
 def setup_cfg(code: str) -> Cfg:
         as_tree = AstBuilder().string_build(code)
         cfg = Cfg(as_tree)
+        cfg.apply_root_transform()
         cfg.convert_to_ssa()
         return cfg
 

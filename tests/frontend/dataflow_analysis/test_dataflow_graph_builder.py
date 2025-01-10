@@ -10,18 +10,16 @@ from cascade.frontend.intermediate_representation import Statement, StatementDat
 from cascade.frontend.util import setup_cfg
 
 
-def get_statment(df: StatementDataflowGraph, v: nodes.Statement):
-    return next(s for s in df.graph.nodes if s.block == v)
-
-
-def edge_exists_between(df: StatementDataflowGraph, v: nodes.Statement, n: nodes.Statement):
-    statement_v: Statement = get_statment(df, v)
-    statement_n: Statement = get_statment(df, n)
-    assert (statement_v, statement_n) in df.graph.edges
-
 def assert_expected_edges(df, expected_edges):
     edges: list[nodes.Statement] = [(n.block, v.block) for n,v in df.graph.edges]
     assert edges == expected_edges
+
+
+def setup_test(program: str) -> nodes.FunctionDef:
+    cfg: Cfg = setup_cfg(program)
+    blocks = cfg.block_list
+    user_class: nodes.Block = blocks[2] 
+    return user_class.blocks[1].ssa_code.code_list[0]
 
 # TODO: FOr instance in the example below there is a indirect dependency between update balence and 
 # returning the balence >= 0. (side effect dependency)
@@ -34,10 +32,7 @@ def test_simple_dataflow_graph():
                         self.balance -= item_price
                         return self.balance >= 0
                         """)
-    cfg: Cfg = setup_cfg(program)
-    blocks = cfg.block_list
-    user_class: nodes.Block = blocks[2] 
-    buy_item: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
+    buy_item: nodes.FunctionDef = setup_test(program)
     buy_item_body_0 = buy_item.body[0]
     buy_item_body_1 = buy_item.body[1]
     buy_item_body_2 = buy_item.body[2]
@@ -49,3 +44,59 @@ def test_simple_dataflow_graph():
         (buy_item_body_0, buy_item_body_1)
     ]
     assert_expected_edges(df, expected_edges)
+
+def test_dataflow_graph_builder_with_if_statement():
+    """ We can safely assume that the if statement does not contain any remote entity calls.
+        Preprocessing should modify the code such that the remote call to the remote entity is invoked
+        before the if statement.
+    """
+    program: str = dedent("""
+            class User:
+                
+                def buy_item(self, item: 'Item') -> bool:
+                    item_price = item.get_price() # body[0]
+                    if item_price < 100: # if_stmt_test
+                        total_price = item_price + 10 # if_body
+                    else:
+                        total_price = item_price # or_else
+                    self.balance -= total_price # body[2]
+                    return self.balance >= 0 # body[3]
+                    """) 
+    buy_item: nodes.FunctionDef = setup_test(program)
+    body = buy_item.body
+    if_stmt = body[1]
+    if_stmt_test = if_stmt.test
+    if_body, = if_stmt.body
+    or_else, = if_stmt.orelse
+    df: StatementDataflowGraph = DataflowGraphBuilder.build([buy_item] + buy_item.body)
+    expected_edges = [
+        (buy_item, body[0]),
+        (buy_item, body[2]),
+        (buy_item, body[3]),
+        (body[0], if_stmt_test),
+        (body[0], if_body),
+        (body[0], or_else),
+        (if_stmt_test, if_body),
+        (if_stmt_test, or_else),
+        (if_body, body[2]),
+        (or_else, body[2])
+    ]
+    assert_expected_edges(df, expected_edges)
+
+
+def test_dataflow_graph_builder_with_if_statement_containing_remote_entity_invocation():
+    """ In this case a remote enitity is invoked in the if branch.
+    """
+    program: str = dedent("""
+            class User:
+                
+                def buy_item(self, item: 'Item', delivery_service: 'DeliveryService') -> bool:
+                    item_price = item.get_price()
+                    if item_price < 100:
+                        total_price = item_price + delivery_service.get_delivery_costs(item_price)
+                    else:
+                        total_price = item_price
+                    self.balance -= total_price
+                    return self.balance >= 0
+                    """) 
+    buy_item: nodes.FunctionDef = setup_test(program)

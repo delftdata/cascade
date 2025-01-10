@@ -80,6 +80,8 @@ class GenerateSplittFunctions:
 
     
     def no_remote_dependencies_on_path(self, G: nx.DiGraph, source: Statement, target: Statement) -> bool:
+        """ Returns if there is a remote entity invocation on any path from source to target.
+        """
         for path in self.get_all_simple_paths(G, source, target):
             for n in path:
                 if n not in [source, target] and n.is_remote():
