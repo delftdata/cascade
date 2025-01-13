@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import os
+import time
 import uuid
 import threading
 from typing import Literal, Optional, Type, Union
@@ -310,7 +311,7 @@ class FlinkRuntime():
 
         Warning that this does not work well with run(collect=True)!"""
 
-    def init(self, kafka_broker="localhost:9092", bundle_time=1, bundle_size=5):
+    def init(self, kafka_broker="localhost:9092", bundle_time=1, bundle_size=5, parallelism=None):
         """Initialise & configure the Flink runtime. 
         
         This function is required before any other calls, and requires a Kafka 
@@ -338,6 +339,9 @@ class FlinkRuntime():
         config.set_integer("python.fn-execution.bundle.size", bundle_size)
 
         self.env = StreamExecutionEnvironment.get_execution_environment(config)
+        if parallelism:
+            self.env.set_parallelism(parallelism)
+        logger.debug(f"FlinkRuntime: parellelism {self.env.get_parallelism()}")
 
         kafka_jar = os.path.join(os.path.abspath(os.path.dirname(__file__)),
         'bin/flink-sql-connector-kafka-3.3.0-1.20.jar')
@@ -531,7 +535,7 @@ class FlinkClientSync:
         self.output_topic = output_topic
         self.kafka_url = kafka_url
         self.is_consuming = False
-        self._futures: dict[int, Optional[EventResult]] = {} # TODO: handle timeouts?
+        self._futures: dict[int, dict] = {} # TODO: handle timeouts?
         """Mapping of event id's to their EventResult. None if not arrived."""
         if start_consumer_thread:
             self.start_consumer_thread()      
@@ -562,10 +566,12 @@ class FlinkClientSync:
                 continue
             try:
                 event_result: EventResult = pickle.loads(msg.value())
+                ts = time.time()
                 if event_result.event_id in self._futures:
                     if (r := self._futures[event_result.event_id]) != None:
                         logger.warning(f"Recieved EventResult with id {event_result.event_id} more than once: {event_result} replaced previous: {r}")
-                    self._futures[event_result.event_id] = event_result
+                    self._futures[event_result.event_id]["ret"] = event_result
+                    self._futures[event_result.event_id]["ret_t"] = ts
             except Exception as e:
                 logger.error(f"Consumer deserializing error: {e}")
                 
@@ -584,8 +590,13 @@ class FlinkClientSync:
         if flush:
             self.producer.flush()
 
-        self._futures[event._id] = None
-        return event._id    
+        self._futures[event._id] = {
+            "sent": event,
+            "sent_t": time.time(),
+            "ret": None,
+            "ret_t": None
+        }
+        return event._id        
 
     def close(self):
         self.producer.flush()

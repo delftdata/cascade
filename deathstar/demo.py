@@ -2,8 +2,8 @@ import random
 import sys
 import os
 import time
+import csv
 from confluent_kafka import Producer
-import pickle
 from timeit import default_timer as timer
 from multiprocessing import Pool
 
@@ -251,17 +251,17 @@ class DeathstarClient:
             c += 1
     
 threads = 1
-messages_per_second = 100
-sleeps_per_second = 100
+messages_per_second = 10
+sleeps_per_second = 10
 sleep_time = 0.0085
-seconds = 20
+seconds = 10
 
 
 def benchmark_runner(proc_num) -> dict[int, dict]:
     print(f'Generator: {proc_num} starting')
     client = DeathstarClient("deathstar", "ds-out")
     deathstar_generator = client.deathstar_workload_generator()
-    futures: dict[int, dict] = {}
+    # futures: dict[int, dict] = {}
     start = timer()
     for _ in range(seconds):
         sec_start = timer()
@@ -269,11 +269,11 @@ def benchmark_runner(proc_num) -> dict[int, dict]:
             if i % (messages_per_second // sleeps_per_second) == 0:
                 time.sleep(sleep_time)
             event = next(deathstar_generator)
-            func_name = event.dataflow.name if event.dataflow is not None else "login" # only login has no dataflow
-            key = event.key_stack[0]
-            params = event.variable_map
+            # func_name = event.dataflow.name if event.dataflow is not None else "login" # only login has no dataflow
+            # key = event.key_stack[0]
+            # params = event.variable_map
             client.send(event)
-            futures[event._id] = {"event": f'{func_name} {key}->{params}'}
+            # futures[event._id] = {"event": f'{func_name} {key}->{params}'}
             
         # styx.flush()
         sec_end = timer()
@@ -287,11 +287,50 @@ def benchmark_runner(proc_num) -> dict[int, dict]:
     # styx.close()
     # for key, metadata in styx.delivery_timestamps.items():
     #     timestamp_futures[key]["timestamp"] = metadata
-    for event_id, result in client.client._futures.items():
-        assert event_id in futures
-        futures[event_id]["result"] = result
+    
+    done = False
+    while not done:
+        done = True
+        for event_id, fut in client.client._futures.items():
+            result = fut["ret"]
+            if result is None:
+                done = False
+                time.sleep(0.5)
+                break
+    futures = client.client._futures
+    client.client.close()
     return futures
 
+
+def write_dict_to_csv(futures_dict, filename):
+    """
+    Writes a dictionary of event data to a CSV file.
+
+    Args:
+        futures_dict (dict): A dictionary where each key is an event ID and the value is another dict.
+        filename (str): The name of the CSV file to write to.
+    """
+    # Define the column headers
+    headers = ["event_id", "sent", "sent_t", "ret", "ret_t"]
+    
+    # Open the file for writing
+    with open(filename, mode='w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=headers)
+        
+        # Write the headers
+        writer.writeheader()
+        
+        # Write the data rows
+        for event_id, event_data in futures_dict.items():
+            # Prepare a row where the 'event_id' is the first column
+            row = {
+                "event_id": event_id,
+                "sent": event_data.get("sent"),
+                "sent_t": event_data.get("sent_t"),
+                "ret": event_data.get("ret"),
+                "ret_t": event_data.get("ret_t")
+            }
+            writer.writerow(row)
 
 def main():
     ds = DeathstarDemo("deathstar", "ds-out")
@@ -303,10 +342,11 @@ def main():
     time.sleep(1)
     input()
 
-    with Pool(threads) as p:
-        results = p.map(benchmark_runner, range(threads))
+    # with Pool(threads) as p:
+    #     results = p.map(benchmark_runner, range(threads))
 
-    results = {k: v for d in results for k, v in d.items()}
+    # results = {k: v for d in results for k, v in d.items()}
+    results = benchmark_runner(0)
 
     # pd.DataFrame({"request_id": list(results.keys()),
     #               "timestamp": [res["timestamp"] for res in results.values()],
@@ -316,10 +356,11 @@ def main():
     t = len(results)
     r = 0
     for result in results.values():
-        if result["result"] is not None:
+        if result["ret"] is not None:
             print(result)
             r += 1
     print(f"{r}/{t} results recieved.")
-    
+    write_dict_to_csv(results, "test2.csv")
+
 if __name__ == "__main__":
     main()
