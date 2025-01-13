@@ -53,3 +53,4 @@ urllib3==2.2.3
 zstandard==0.23.0
 klara==0.6.3
 networkx==3.2.1
+matplotlib==3.9.2
