@@ -55,6 +55,12 @@ You should then be able to run integration tests with the following command:
 pytest -m integration
 ```
 
+To view with debug logs:
+
+```
+pytest -m integration -s --log-level=DEBUG
+```
+
 ## Documentation
 
 Documentation can be generated using [pdoc](https://pdoc.dev/docs/pdoc.html):
