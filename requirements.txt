@@ -14,6 +14,7 @@ exceptiongroup==1.2.2
 fastavro==1.9.7
 fasteners==0.19
 find_libpython==0.4.0
+geopy==2.4.1
 grpcio==1.68.1
 hdfs==2.7.3
 httplib2==0.22.0
@@ -50,5 +51,6 @@ typing_extensions==4.12.2
 tzdata==2024.2
 urllib3==2.2.3
 zstandard==0.23.0
-klara=0.6.3
+klara==0.6.3
 networkx==3.2.1
+matplotlib==3.9.2

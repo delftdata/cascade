@@ -13,17 +13,15 @@ def test_two_entities():
     runtime.add_operator(FlinkOperator(item_op))
     runtime.add_operator(FlinkOperator(user_op))
 
-
     # Create a User object
     foo_user = User("foo", 100)
-    init_user_node = OpNode(User, InitClass())
+    init_user_node = OpNode(user_op, InitClass())
     event = Event(init_user_node, ["foo"], {"key": "foo", "balance": 100}, None) 
-
     runtime.send(event)
 
     # Create an Item object
     fork_item = Item("fork", 5)
-    init_item_node = OpNode(Item, InitClass())
+    init_item_node = OpNode(item_op, InitClass())
     event = Event(init_item_node, ["fork"], {"key": "fork", "price": 5}, None) 
     runtime.send(event)
 
@@ -55,7 +53,7 @@ def test_two_entities():
     assert buy_fork_result.result == True
 
     # Send an event to check if the balance was updated
-    user_get_balance_node = OpNode(User, InvokeMethod("get_balance"))
+    user_get_balance_node = OpNode(user_op, InvokeMethod("get_balance"))
     user_get_balance = Event(user_get_balance_node, ["foo"], {}, None) 
     runtime.send(user_get_balance, flush=True)
 
