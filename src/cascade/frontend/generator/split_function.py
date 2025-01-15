@@ -75,4 +75,3 @@ class SplitFunction:
         remote_call: RemoteCall = RemoteCall(attribute.value.id, attribute.attr, target)
         self.remote_calls.append(remote_call)
 
-

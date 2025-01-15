@@ -74,11 +74,15 @@ def get_compiled_methods() -> str:
             instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
             control_flow_splits = SplitControlFlow.split(method_desc.method_node, method_desc.method_name)
             split_functions = []
+            df = DataFlow(cls_desc.class_name)
+            split_dataflows = {}
             for split in control_flow_splits:
                 split.build_dataflow()
-                split_functions.extend(GenerateSplitFunctions.generate(split.dataflow, cls_desc.class_name, entities, instance_type_map))
+                control_flow_split_split_functions = GenerateSplitFunctions.generate(split.dataflow, cls_desc.class_name, entities, instance_type_map) 
+                split_functions.extend(control_flow_split_split_functions)
+                begin, end_nodes = GenerateDataflow.generate(df, control_flow_split_split_functions, instance_type_map)
+                
                 # maybe pass some num here
-            df: DataFlow = GenerateDataflow.generate(split_functions, instance_type_map)
             class_compiled_methods: str = BuildCompiledMethodsString.build(split_functions)
             compiled_methods.append(class_compiled_methods)
 

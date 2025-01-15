@@ -6,11 +6,10 @@ class GenerateDataflow:
     """ Generates dataflow
     """
     
-    def __init__(self, split_functions: list[SplitFunction], instance_type_map: dict[str, str]):
+    def __init__(self, df: DataFlow, split_functions: list[SplitFunction], instance_type_map: dict[str, str]):
         #TODO: add buildcontext that contains class name and target method
         self.split_functions = split_functions
-        class_name = "class_name" # TODO: remove placeholder
-        self.df = DataFlow(class_name)
+        self.df = df
         self.instance_type_map = instance_type_map
     
     def generate_dataflow(self):
@@ -47,7 +46,7 @@ class GenerateDataflow:
             split.extract_remote_method_calls()
     
     @classmethod
-    def generate(cls, split_functions: list[SplitFunction], instance_type_map: dict[str, str]) -> DataFlow:
+    def generate(cls, df, split_functions: list[SplitFunction], instance_type_map: dict[str, str]) -> DataFlow:
         c = cls(split_functions, instance_type_map)
         c.generate_dataflow()
-        return c.df 
+        return c
