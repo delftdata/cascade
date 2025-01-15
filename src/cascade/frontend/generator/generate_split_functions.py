@@ -5,11 +5,10 @@ import networkx as nx
 from cascade.frontend.intermediate_representation import Statement, StatementDataflowGraph
 from cascade.frontend.generator.split_function import SplitFunction
 
-
 from klara.core import nodes
 from klara.core.cfg import RawBasicBlock
 
-class GenerateSplittFunctions:
+class GenerateSplitFunctions:
 
     def __init__(self, dataflow_graph: StatementDataflowGraph, class_name: str, entities: list[str], instance_type_map: dict[str, str]):
         self.dataflow_graph: StatementDataflowGraph = dataflow_graph
@@ -31,7 +30,8 @@ class GenerateSplittFunctions:
             self.add_split_function(first_half)
             G = G.subgraph(continuation)
             # TODO: Add a new source node to continuation
-        self.add_split_function(continuation)
+        if continuation:
+            self.add_split_function(continuation)
     
     def add_split_function(self, statements: list[Statement]): 
         targets, values = set(), set()

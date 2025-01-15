@@ -69,9 +69,8 @@ class SplitFunction:
 
     def add_statement_to_remote_call_set(self, statement: Statement):
         assert statement.attribute, "A remote call should have an attribute name to call"
+        assert len(statement.targets) == 1, "A remote method invocation that returns multiple items is not supported yet..."
         attribute = statement.attribute
-        if len(statement.targets) > 1:
-            assert False, "A remote method invocation that returns multiple items is not supported yet..."
         target, = statement.targets
         remote_call: RemoteCall = RemoteCall(attribute.value.id, attribute.attr, target)
         self.remote_calls.append(remote_call)

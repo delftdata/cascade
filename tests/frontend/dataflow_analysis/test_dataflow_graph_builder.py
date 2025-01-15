@@ -19,7 +19,8 @@ def setup_test(program: str) -> nodes.FunctionDef:
     cfg: Cfg = setup_cfg(program)
     blocks = cfg.block_list
     user_class: nodes.Block = blocks[2] 
-    return user_class.blocks[1].ssa_code.code_list[0]
+    f = user_class.blocks[1].ssa_code.code_list[0]
+    return f
 
 # TODO: FOr instance in the example below there is a indirect dependency between update balence and 
 # returning the balence >= 0. (side effect dependency)
@@ -44,6 +45,33 @@ def test_simple_dataflow_graph():
         (buy_item_body_0, buy_item_body_1)
     ]
     assert_expected_edges(df, expected_edges)
+
+
+def test_buy_two_items_dataflow():
+    program: str = dedent("""
+                class User:
+                    
+                    def buy_item(self, item_0: 'Item', item_1: 'Item') -> bool:
+                        discount = 10
+                        item_price_0 = item_0.get_price(discount)
+                        item_price_1 = item_1.get_price(discount)
+                        total_price = item_price_0 + item_price_1
+                        self.balance -= total_price
+                        return self.balance >= 0
+                        """)
+    buy_item: nodes.FunctionDef = setup_test(program)
+    buy_item_body_0 = buy_item.body[0]
+    buy_item_body_1 = buy_item.body[1]
+    buy_item_body_2 = buy_item.body[2]
+    df: StatementDataflowGraph = DataflowGraphBuilder.build([buy_item] + buy_item.body)
+    expected_edges = [
+        (buy_item, buy_item_body_0),
+        (buy_item, buy_item_body_1),
+        (buy_item, buy_item_body_2),
+        (buy_item_body_0, buy_item_body_1)
+    ]
+    assert_expected_edges(df, expected_edges) 
+
 
 def test_dataflow_graph_builder_with_if_statement():
     """ We can safely assume that the if statement does not contain any remote entity calls.
@@ -93,7 +121,8 @@ def test_dataflow_graph_builder_with_if_statement_containing_remote_entity_invoc
                 def buy_item(self, item: 'Item', delivery_service: 'DeliveryService') -> bool:
                     item_price = item.get_price()
                     if item_price < 100:
-                        total_price = item_price + delivery_service.get_delivery_costs(item_price)
+                        delivery_costs = delivery_service.get_delivery_costs(item_price)
+                        total_price = item_price + delivery_costs
                     else:
                         total_price = item_price
                     self.balance -= total_price

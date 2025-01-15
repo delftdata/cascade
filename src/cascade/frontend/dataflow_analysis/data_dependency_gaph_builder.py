@@ -10,17 +10,11 @@ from cascade.frontend.intermediate_representation import Statement, StatementDat
 from cascade.frontend.ast_visitors import ContainsAttributeVisitor, VariableGetter
 
 
-class DataflowGraphBuilder:
+class DataDependencyGraphBuilder:
 
-    def __init__(self, block_list: list):
-        self.block_list: list = block_list
-        self.counter = count()
-    
-    def next(self):
-        return next(self.counter)
 
     def extract_data_dependencies(self, block_list):
-        G: nx.DiGraph = nx.DiGraph()
+        G = nx.DiGraph()
         for b in block_list:
             match type(b):
                 case cfg.ModuleLabel | cfg.TempAssignBlock:
@@ -28,10 +22,14 @@ class DataflowGraphBuilder:
                 case nodes.FunctionDef:
                     statement = Statement(self.next(), b)
                     args = b.args
-                    function_vars = [nodes.Name.quick_build(f'{a.arg}_0') if type(a) == nodes.Arg else a for a in args.args]
+                    function_vars = [nodes.Name.quick_build(f'{a.arg}_0') for a in args.args]
                     statement.extend_targets(function_vars)
                     statement.extend_values(function_vars)
                     G.add_node(statement)
+                case nodes.If:
+                    self.add_statment_to_graph(b.test, G)
+                    self.branch_out(b.body, G)
+                    self.branch_out(b.orelse, G)
                 case _:
                     self.add_statment_to_graph(b, G)
         return G
@@ -51,6 +49,11 @@ class DataflowGraphBuilder:
         statement.set_attribute(attribute)
         return statement
 
+    def branch_out(self, block_list, G: nx.DiGraph):
+        H = self.extract_data_dependencies(block_list)
+        G.add_nodes_from(H)
+        G.add_edges_from(H.edges())
+
     def inpsect_phi_function_dependencies(self, funcion_def: nodes.FunctionDef):
         blocks = funcion_def.refer_to_block.blocks
         ssa_code = list(chain.from_iterable(b.ssa_code.code_list for b in blocks))
@@ -64,14 +67,9 @@ class DataflowGraphBuilder:
             if type(block) == nodes.Assign and block.is_phi:
                 self.add_statment_to_graph(block, G)
 
-    def construct_dataflow_graph(self, block_list: list[nodes.BaseNode], live_variables: list[nodes.Arg]) -> nx.DiGraph:
-        node: nodes.FunctionDef = nodes.FunctionDef()
-        args: nodes.Arguments = nodes.Arguments()
-        args.postinit(live_variables, [], [], [], [], [])
-        node.postinit('name_placeholder', args, block_list, [], [])
-        block_list.insert(0, node)
+    def construct_dataflow_graph(self, block_list) -> nx.DiGraph:
         G: nx.DiGraph = self.extract_data_dependencies(block_list)
-        # self.add_data_dependencies_from_phi_functions(block_list, G)
+        self.add_data_dependencies_from_phi_functions(block_list, G)
         self.dataflow_analysis(G)
         return G
     
@@ -86,7 +84,7 @@ class DataflowGraphBuilder:
         return G
     
     @classmethod
-    def build(cls, block_list: list, live_variables: list[nodes.Arg]) -> StatementDataflowGraph:
+    def build(cls, block_list: list) -> StatementDataflowGraph:
         dataflow_graph_builder = cls(block_list)
-        G = dataflow_graph_builder.construct_dataflow_graph(block_list, live_variables)
+        G = dataflow_graph_builder.construct_dataflow_graph(block_list)
         return StatementDataflowGraph(G)

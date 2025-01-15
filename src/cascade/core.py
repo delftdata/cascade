@@ -8,12 +8,13 @@ from klara.core.cfg import Cfg
 
 from cascade.wrappers import ClassWrapper
 from cascade.descriptors import ClassDescriptor, MethodDescriptor
-from cascade.frontend.generator.generate_split_functions import GenerateSplittFunctions
+from cascade.frontend.generator.generate_split_functions import GenerateSplitFunctions
 from cascade.frontend.generator.generate_dataflow import GenerateDataflow
 from cascade.dataflow.dataflow import DataFlow 
 from cascade.frontend.intermediate_representation import StatementDataflowGraph
 from cascade.frontend.generator.build_compiled_method_string import BuildCompiledMethodsString
 from cascade.frontend.ast_visitors import ExtractTypeVisitor
+from cascade.frontend.dataflow_analysis.split_control_flow import SplitControlFlow
 
 def setup_cfg(code: str) -> Cfg:
         as_tree = AstBuilder().string_build(code)
@@ -53,9 +54,7 @@ def cascade(cls, parse_file=True):
 
 
 def init():
-    for cls in registered_classes:
-        for method in cls.class_desc.methods_dec:
-            method.build_dataflow()
+    pass
 
 
 def get_entity_names() -> str:
@@ -72,9 +71,13 @@ def get_compiled_methods() -> str:
         for method_desc in cls_desc.methods_dec:
             if method_desc.method_name == '__init__':
                 continue
-            dataflow_graph: StatementDataflowGraph = method_desc.dataflow
             instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
-            split_functions = GenerateSplittFunctions.generate(dataflow_graph, cls_desc.class_name, entities, instance_type_map)
+            control_flow_splits = SplitControlFlow.split(method_desc.method_node, method_desc.method_name)
+            split_functions = []
+            for split in control_flow_splits:
+                split.build_dataflow()
+                split_functions.extend(GenerateSplitFunctions.generate(split.dataflow, cls_desc.class_name, entities, instance_type_map))
+                # maybe pass some num here
             df: DataFlow = GenerateDataflow.generate(split_functions, instance_type_map)
             class_compiled_methods: str = BuildCompiledMethodsString.build(split_functions)
             compiled_methods.append(class_compiled_methods)
