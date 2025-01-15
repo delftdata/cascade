@@ -270,12 +270,12 @@ def benchmark_runner(proc_num) -> dict[int, dict]:
                 time.sleep(sleep_time)
             event = next(deathstar_generator)
             # func_name = event.dataflow.name if event.dataflow is not None else "login" # only login has no dataflow
-            # key = event.key_stack[0]
+            key = event.key_stack[0]
             # params = event.variable_map
             client.send(event)
             # futures[event._id] = {"event": f'{func_name} {key}->{params}'}
-            
-        # styx.flush()
+        
+        client.client.flush()
         sec_end = timer()
         lps = sec_end - sec_start
         if lps < 1:
@@ -311,7 +311,7 @@ def write_dict_to_csv(futures_dict, filename):
         filename (str): The name of the CSV file to write to.
     """
     # Define the column headers
-    headers = ["event_id", "sent", "sent_t", "ret", "ret_t"]
+    headers = ["event_id", "sent", "sent_t", "ret", "ret_t", "latency"]
     
     # Open the file for writing
     with open(filename, mode='w', newline='', encoding='utf-8') as csvfile:
@@ -328,7 +328,8 @@ def write_dict_to_csv(futures_dict, filename):
                 "sent": event_data.get("sent"),
                 "sent_t": event_data.get("sent_t"),
                 "ret": event_data.get("ret"),
-                "ret_t": event_data.get("ret_t")
+                "ret_t": event_data.get("ret_t"),
+                "latency": event_data["ret_t"][1] - event_data["sent_t"][1]
             }
             writer.writerow(row)
 

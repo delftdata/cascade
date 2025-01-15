@@ -551,6 +551,7 @@ class FlinkClientSync:
                 "bootstrap.servers": self.kafka_url, 
                 "group.id": str(uuid.uuid4()), 
                 "auto.offset.reset": "earliest",
+                "api.version.request": True
                 # "enable.auto.commit": False,
                 # "fetch.min.bytes": 1
             })
@@ -566,9 +567,9 @@ class FlinkClientSync:
                 continue
             try:
                 event_result: EventResult = pickle.loads(msg.value())
-                ts = time.time()
+                ts = msg.timestamp()
                 if event_result.event_id in self._futures:
-                    if (r := self._futures[event_result.event_id]) != None:
+                    if (r := self._futures[event_result.event_id]["ret"]) != None:
                         logger.warning(f"Recieved EventResult with id {event_result.event_id} more than once: {event_result} replaced previous: {r}")
                     self._futures[event_result.event_id]["ret"] = event_result
                     self._futures[event_result.event_id]["ret_t"] = ts
@@ -578,6 +579,9 @@ class FlinkClientSync:
         
         self.consumer.close()
 
+    def flush(self):
+        self.producer.flush()
+
     def send(self, event: Event, flush=False) -> int:
         """Send an event to the Kafka source and block until an EventResult is recieved.
 
@@ -586,16 +590,19 @@ class FlinkClientSync:
         :return: The result event if recieved
         :raises Exception: If an exception occured recieved or deserializing the message.
         """
-        self.producer.produce(self.input_topic, value=pickle.dumps(event))
-        if flush:
-            self.producer.flush()
-
         self._futures[event._id] = {
             "sent": event,
-            "sent_t": time.time(),
+            "sent_t": None,
             "ret": None,
             "ret_t": None
         }
+
+        def set_ts(ts):
+            self._futures[event._id]["sent_t"] = ts
+
+        self.producer.produce(self.input_topic, value=pickle.dumps(event), on_delivery=lambda err, msg: set_ts(msg.timestamp()))
+        if flush:
+            self.producer.flush()
         return event._id        
 
     def close(self):
