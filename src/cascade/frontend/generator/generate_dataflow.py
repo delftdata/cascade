@@ -15,7 +15,7 @@ class GenerateDataflow:
         self.extract_remote_method_calls()
         return self.build_dataflow()
     
-    def build_dataflow(self):
+    def build_dataflow(self) -> list[list[OpNode]]:
         """ Every remote function invocation should add the node
         """
         nodes = []
@@ -46,6 +46,6 @@ class GenerateDataflow:
             split.extract_remote_method_calls()
     
     @classmethod
-    def generate(cls, split_functions: list[SplitFunction], instance_type_map: dict[str, str]) -> DataFlow:
+    def generate(cls, split_functions: list[SplitFunction], instance_type_map: dict[str, str]) -> list[list[OpNode]]:
         c = cls(split_functions, instance_type_map)
         return c.generate_dataflow()

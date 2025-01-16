@@ -31,7 +31,6 @@ def test_target_programs(file_name: str):
     import_module_name: str = f'test_programs.target.{file_name.strip(".py")}'
     exec(f'import {import_module_name}')
     
-    cascade.core.init()
     assert cascade.core.registered_classes, "The Cascade module classes should be registered at this point."
     methods: str = cascade.core.get_compiled_methods()
     compare_targets_with_expected(file_name, methods, expected_program_relative_path)

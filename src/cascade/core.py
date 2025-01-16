@@ -54,10 +54,6 @@ def cascade(cls, parse_file=True):
     registered_classes.append(class_wrapper)
 
 
-def init():
-    pass
-
-
 def get_entity_names() -> str:
     """Returns a list with the names of all registered entities"""
     return [cls.class_desc.class_name for cls in registered_classes]
@@ -75,21 +71,21 @@ def get_compiled_methods() -> str:
             instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
             control_flow_splits = SplitControlFlow.split(method_desc.method_node, method_desc.method_name)
             split_functions = []
-            control_flow_node_map = {}
+            control_flow_node_map: dict[str, list[list[OpNode]]]= {}
             for split in control_flow_splits.nodes():
                 if split.is_if_condition:
                     # if node only exists of condition invocation.
-                    if_cond_node = OpNode(split.class_name, InvokeMethod(split.method_name))
-                    control_flow_node_map[split.method_name] = [if_cond_node]
+                    if_cond_node = OpNode(cls_desc.class_name, InvokeMethod(split.method_name))
+                    control_flow_node_map[split.method_name] = [[if_cond_node]]
                     continue
                 
                 split.build_dataflow()
                 control_flow_split_split_functions = GenerateSplitFunctions.generate(split.dataflow, cls_desc.class_name, entities, instance_type_map) 
                 split_functions.extend(control_flow_split_split_functions)
-                node_list = GenerateDataflow.generate(control_flow_split_split_functions, instance_type_map)
+                node_list: list[list[OpNode]] = GenerateDataflow.generate(control_flow_split_split_functions, instance_type_map)
                 control_flow_node_map[split.method_name] = node_list
 
-            df = DataflowLinker.link(control_flow_node_map, control_flow_splits)
+            df = DataflowLinker.link(cls_desc.class_name, control_flow_node_map, control_flow_splits)
             
             # link after
                 
