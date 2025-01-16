@@ -10,11 +10,12 @@ from cascade.wrappers import ClassWrapper
 from cascade.descriptors import ClassDescriptor, MethodDescriptor
 from cascade.frontend.generator.generate_split_functions import GenerateSplitFunctions
 from cascade.frontend.generator.generate_dataflow import GenerateDataflow
-from cascade.dataflow.dataflow import DataFlow 
+from cascade.dataflow.dataflow import DataFlow, OpNode, InvokeMethod
 from cascade.frontend.intermediate_representation import StatementDataflowGraph
 from cascade.frontend.generator.build_compiled_method_string import BuildCompiledMethodsString
 from cascade.frontend.ast_visitors import ExtractTypeVisitor
 from cascade.frontend.dataflow_analysis.split_control_flow import SplitControlFlow
+from cascade.frontend.generator.dataflow_linker import DataflowLinker
 
 def setup_cfg(code: str) -> Cfg:
         as_tree = AstBuilder().string_build(code)
@@ -74,13 +75,23 @@ def get_compiled_methods() -> str:
             instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
             control_flow_splits = SplitControlFlow.split(method_desc.method_node, method_desc.method_name)
             split_functions = []
-            df = DataFlow(cls_desc.class_name)
-            split_dataflows = {}
-            for split in control_flow_splits:
+            control_flow_node_map = {}
+            for split in control_flow_splits.nodes():
+                if split.is_if_condition:
+                    # if node only exists of condition invocation.
+                    if_cond_node = OpNode(split.class_name, InvokeMethod(split.method_name))
+                    control_flow_node_map[split.method_name] = [if_cond_node]
+                    continue
+                
                 split.build_dataflow()
                 control_flow_split_split_functions = GenerateSplitFunctions.generate(split.dataflow, cls_desc.class_name, entities, instance_type_map) 
                 split_functions.extend(control_flow_split_split_functions)
-                begin, end_nodes = GenerateDataflow.generate(df, control_flow_split_split_functions, instance_type_map)
+                node_list = GenerateDataflow.generate(control_flow_split_split_functions, instance_type_map)
+                control_flow_node_map[split.method_name] = node_list
+
+            df = DataflowLinker.link(control_flow_node_map, control_flow_splits)
+            
+            # link after
                 
                 # maybe pass some num here
             class_compiled_methods: str = BuildCompiledMethodsString.build(split_functions)
