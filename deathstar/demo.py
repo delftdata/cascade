@@ -3,7 +3,6 @@ import sys
 import os
 import time
 import csv
-from confluent_kafka import Producer
 from timeit import default_timer as timer
 from multiprocessing import Pool
 
@@ -20,19 +19,19 @@ from deathstar.entities.user import User, user_op
 
 
 class DeathstarDemo():
-    def __init__(self, input_topic, output_topic):
+    def __init__(self):
         self.init_user = OpNode(user_op, InitClass())
         self.init_hotel = OpNode(hotel_op, InitClass())
         self.init_flight = OpNode(flight_op, InitClass())
-        self.runtime = FlinkRuntime(input_topic, output_topic)
     
-    def init_runtime(self):
-        self.runtime.init(bundle_time=100, bundle_size=1000)
-        self.runtime.add_operator(FlinkOperator(hotel_op))
-        self.runtime.add_operator(FlinkOperator(flight_op))
-        self.runtime.add_operator(FlinkOperator(user_op))
-        self.runtime.add_stateless_operator(FlinkStatelessOperator(search_op))
-        self.runtime.add_stateless_operator(FlinkStatelessOperator(recommend_op))
+    def init_runtime(self, runtime, **kwargs):
+        self.runtime = runtime
+        self.runtime.init(**kwargs)
+        self.runtime.add_operator(hotel_op)
+        self.runtime.add_operator(flight_op)
+        self.runtime.add_operator(user_op)
+        self.runtime.add_stateless_operator(search_op)
+        self.runtime.add_stateless_operator(recommend_op)
 
 
     def populate(self):
@@ -176,80 +175,72 @@ class DeathstarDemo():
         }, None)
         self.runtime.send(event, flush=True)
 
-class DeathstarClient:
-    def __init__(self, input_topic="input-topic", output_topic="output-topic", kafka_broker="localhost:9092"):
-        self.client = FlinkClientSync(input_topic, output_topic, kafka_broker, True)
-        self.producer = Producer({'bootstrap.servers': kafka_broker})
+def search_hotel():
+    in_date = random.randint(9, 23)
+    out_date = random.randint(in_date + 1, 24)
 
-    def send(self, event: Event, flush: bool = False):
-        return self.client.send(event, flush)
+    if in_date < 10:
+        in_date_str = f"2015-04-0{in_date}"
+    else:
+        in_date_str = f"2015-04-{in_date}"
+    if out_date < 10:
+        out_date_str = f"2015-04-0{out_date}"
+    else:
+        out_date_str = f"2015-04-{out_date}"
 
-    def search_hotel(self):
-        in_date = random.randint(9, 23)
-        out_date = random.randint(in_date + 1, 24)
+    lat = 38.0235 + (random.randint(0, 481) - 240.5) / 1000.0
+    lon = -122.095 + (random.randint(0, 325) - 157.0) / 1000.0
 
-        if in_date < 10:
-            in_date_str = f"2015-04-0{in_date}"
+    # We don't really use the in_date, out_date information
+    return Event(search_op.dataflow.entry, ["tempkey"], {"lat": lat, "lon": lon}, search_op.dataflow)
+
+def recommend(req_param=None):
+    if req_param is None:
+        coin = random.random()
+        if coin < 0.5:
+            req_param = "distance"
         else:
-            in_date_str = f"2015-04-{in_date}"
-        if out_date < 10:
-            out_date_str = f"2015-04-0{out_date}"
-        else:
-            out_date_str = f"2015-04-{out_date}"
+            req_param = "price"
 
-        lat = 38.0235 + (random.randint(0, 481) - 240.5) / 1000.0
-        lon = -122.095 + (random.randint(0, 325) - 157.0) / 1000.0
+    lat = 38.0235 + (random.randint(0, 481) - 240.5) / 1000.0
+    lon = -122.095 + (random.randint(0, 325) - 157.0) / 1000.0
 
-        # We don't really use the in_date, out_date information
-        return Event(search_op.dataflow.entry, ["tempkey"], {"lat": lat, "lon": lon}, search_op.dataflow)
+    return Event(recommend_op.dataflow.entry, ["tempkey"], {"requirement": req_param, "lat": lat, "lon": lon}, recommend_op.dataflow)
 
-    def recommend(self, req_param=None):
-        if req_param is None:
-            coin = random.random()
-            if coin < 0.5:
-                req_param = "distance"
-            else:
-                req_param = "price"
+def user_login():
+    user_id = random.randint(0, 500)
+    username = f"Cornell_{user_id}"
+    password = str(user_id) * 10
+    return Event(OpNode(user_op, InvokeMethod("login")), [username], {"password": password}, None)
 
-        lat = 38.0235 + (random.randint(0, 481) - 240.5) / 1000.0
-        lon = -122.095 + (random.randint(0, 325) - 157.0) / 1000.0
-
-        return Event(recommend_op.dataflow.entry, ["tempkey"], {"requirement": req_param, "lat": lat, "lon": lon}, recommend_op.dataflow)
-
-    def user_login(self):
-        user_id = random.randint(0, 500)
-        username = f"Cornell_{user_id}"
-        password = str(user_id) * 10
-        return Event(OpNode(user_op, InvokeMethod("login")), [username], {"password": password}, None)
-
-    def reserve(self):
-        hotel_id = random.randint(0, 99)
-        flight_id = random.randint(0, 99)
-        
-        # user = User("user1", "pass")
-        # user.order(flight, hotel)
-        user_id = "Cornell_" + str(random.randint(0, 500))
-
-        return Event(user_op.dataflows["order"].entry, [user_id], {"flight": str(flight_id), "hotel": str(hotel_id)}, user_op.dataflows["order"])
-
-    def deathstar_workload_generator(self):
-        search_ratio = 0.6
-        recommend_ratio = 0.39
-        user_ratio = 0.005
-        reserve_ratio = 0.005
-        c = 0
-        while True:
-            coin = random.random()
-            if coin < search_ratio:
-                yield self.search_hotel()
-            elif coin < search_ratio + recommend_ratio:
-                yield self.recommend()
-            elif coin < search_ratio + recommend_ratio + user_ratio:
-                yield self.user_login()
-            else:
-                yield self.reserve()
-            c += 1
+def reserve():
+    hotel_id = random.randint(0, 99)
+    flight_id = random.randint(0, 99)
     
+    # user = User("user1", "pass")
+    # user.order(flight, hotel)
+    user_id = "Cornell_" + str(random.randint(0, 500))
+
+    return Event(user_op.dataflows["order"].entry, [user_id], {"flight": str(flight_id), "hotel": str(hotel_id)}, user_op.dataflows["order"])
+
+def deathstar_workload_generator():
+    search_ratio = 0.6
+    recommend_ratio = 0.39
+    user_ratio = 0.005
+    reserve_ratio = 0.005
+    c = 0
+    while True:
+        coin = random.random()
+        if coin < search_ratio:
+            yield search_hotel()
+        elif coin < search_ratio + recommend_ratio:
+            yield recommend()
+        elif coin < search_ratio + recommend_ratio + user_ratio:
+            yield user_login()
+        else:
+            yield reserve()
+        c += 1
+
 threads = 1
 messages_per_second = 10
 sleeps_per_second = 10
@@ -259,8 +250,8 @@ seconds = 10
 
 def benchmark_runner(proc_num) -> dict[int, dict]:
     print(f'Generator: {proc_num} starting')
-    client = DeathstarClient("deathstar", "ds-out")
-    deathstar_generator = client.deathstar_workload_generator()
+    client = FlinkClientSync("deathstar", "ds-out", "localhost:9092", True)
+    deathstar_generator = deathstar_workload_generator()
     # futures: dict[int, dict] = {}
     start = timer()
     for _ in range(seconds):
@@ -275,7 +266,7 @@ def benchmark_runner(proc_num) -> dict[int, dict]:
             client.send(event)
             # futures[event._id] = {"event": f'{func_name} {key}->{params}'}
         
-        client.client.flush()
+        client.flush()
         sec_end = timer()
         lps = sec_end - sec_start
         if lps < 1:
@@ -291,14 +282,14 @@ def benchmark_runner(proc_num) -> dict[int, dict]:
     done = False
     while not done:
         done = True
-        for event_id, fut in client.client._futures.items():
+        for event_id, fut in client._futures.items():
             result = fut["ret"]
             if result is None:
                 done = False
                 time.sleep(0.5)
                 break
-    futures = client.client._futures
-    client.client.close()
+    futures = client._futures
+    client.close()
     return futures
 
 
@@ -334,8 +325,8 @@ def write_dict_to_csv(futures_dict, filename):
             writer.writerow(row)
 
 def main():
-    ds = DeathstarDemo("deathstar", "ds-out")
-    ds.init_runtime()
+    ds = DeathstarDemo()
+    ds.init_runtime(FlinkRuntime("deathstar", "ds-out"), bundle_time=5, bundle_size=10)
     ds.runtime.run(run_async=True)
     ds.populate()
 

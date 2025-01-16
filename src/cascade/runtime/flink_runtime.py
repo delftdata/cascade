@@ -12,7 +12,7 @@ from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, V
 from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRecordSerializationSchema, KafkaSource, KafkaSink
 from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 import pickle 
-from cascade.dataflow.dataflow import Arrived, CollectNode, CollectTarget, Event, EventResult, Filter, InitClass, InvokeMethod, MergeNode, Node, NotArrived, OpNode, Operator, Result, SelectAllNode
+from cascade.dataflow.dataflow import Arrived, CollectNode, CollectTarget, Event, EventResult, Filter, InitClass, InvokeMethod, Node, NotArrived, OpNode, Result, SelectAllNode
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from confluent_kafka import Producer, Consumer
 import logging
@@ -171,9 +171,8 @@ class FlinkSelectAllOperator(KeyedProcessFunction):
 
 class FlinkCollectOperator(KeyedProcessFunction):
     """Flink implementation of a merge operator."""
-    def __init__(self): #, merge_node: MergeNode) -> None:
+    def __init__(self): 
         self.collection: ValueState = None # type: ignore (expect state to be initialised on .open())
-        #self.node = merge_node
 
     def open(self, runtime_context: RuntimeContext):
         descriptor = ValueStateDescriptor("merge_state", Types.PICKLED_BYTE_ARRAY())
@@ -442,7 +441,7 @@ class FlinkRuntime():
                 .process(FlinkCollectOperator())
                 .name("Collect")
         )
-        """Stream that ingests events with an `cascade.dataflow.dataflow.MergeNode` target"""
+        """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 
         self.stateless_op_streams = []
         self.stateful_op_streams = []
@@ -451,9 +450,10 @@ class FlinkRuntime():
         self.producer = Producer({'bootstrap.servers': kafka_broker})
         logger.debug("FlinkRuntime initialized")
     
-    def add_operator(self, flink_op: FlinkOperator):
+    def add_operator(self, op: StatefulOperator):
         """Add a `FlinkOperator` to the Flink datastream."""
-       
+        flink_op = FlinkOperator(op)
+
         op_stream = (
             self.stateful_op_stream.filter(lambda e: e.target.operator.entity == flink_op.operator.entity)
                 .key_by(lambda e: e.key_stack[-1])
@@ -462,9 +462,10 @@ class FlinkRuntime():
             )
         self.stateful_op_streams.append(op_stream)
 
-    def add_stateless_operator(self, flink_op: FlinkStatelessOperator):
+    def add_stateless_operator(self, op: StatelessOperator):
         """Add a `FlinkStatelessOperator` to the Flink datastream."""
-       
+        flink_op = FlinkStatelessOperator(op)
+
         op_stream = (
             self.stateless_op_stream
                 .filter(lambda e: e.target.operator.dataflow.name == flink_op.operator.dataflow.name)
