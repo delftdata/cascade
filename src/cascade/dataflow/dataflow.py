@@ -23,9 +23,9 @@ class Filter:
 @dataclass
 class Node(ABC):
     """Base class for Nodes."""
+
     id: int = field(init=False)
     """This node's unique id."""
-
 
     _id_counter: int = field(init=False, default=0, repr=False)
     outgoing_edges: list['Edge'] = field(init=False, default_factory=list, repr=False)
@@ -41,8 +41,27 @@ class OpNode(Node):
     
     A `Dataflow` may reference the same `StatefulOperator` multiple times. 
     The `StatefulOperator` that this node belongs to is referenced by `cls`."""
-    operator: Operator
+    entity: Type
     method_type: Union[InitClass, InvokeMethod, Filter]
+    read_key_from: str
+    """Which variable to take as the key for this StatefulOperator"""
+    assign_result_to: Optional[str] = field(default=None)
+    """What variable to assign the result of this node to, if any."""
+    is_conditional: bool = field(default=False)
+    """Whether or not the boolean result of this node dictates the following path."""
+    collect_target: Optional['CollectTarget'] = field(default=None)
+    """Whether the result of this node should go to a CollectNode."""
+    
+@dataclass
+class StatelessOpNode(Node):
+    """A node in a `Dataflow` corresponding to a method call of a `StatelessOperator`. 
+    
+    A `Dataflow` may reference the same `StatefulOperator` multiple times. 
+    The `StatefulOperator` that this node belongs to is referenced by `cls`."""
+    dataflow: 'DataFlow'
+    method_type: InvokeMethod
+    """Which variable to take as the key for this StatefulOperator"""
+    
     assign_result_to: Optional[str] = None
     is_conditional: bool = False
     """Whether or not the boolean result of this node dictates the following path."""
@@ -176,7 +195,7 @@ class Event():
     target: 'Node'
     """The Node that this Event wants to go to."""
 
-    key_stack: list[str]
+    # key_stack: list[str]
     """The keys this event is concerned with. 
     The top of the stack, i.e. `key_stack[-1]`, should always correspond to a key 
     on the StatefulOperator of `target.cls` if `target` is an `OpNode`."""
@@ -203,7 +222,7 @@ class Event():
             self._id = Event._id_counter
             Event._id_counter += 1
 
-    def propogate(self, key_stack, result) -> Union['EventResult', list['Event']]:
+    def propogate(self, result) -> Union['EventResult', list['Event']]:
         """Propogate this event through the Dataflow."""
 
         # TODO: keys should be structs containing Key and Opnode (as we need to know the entity (cls) and method to invoke for that particular key)
@@ -216,23 +235,23 @@ class Event():
         if len(targets) == 0:
             return EventResult(self._id, result)
         else:
-            keys = key_stack.pop()
-            if not isinstance(keys, list):
-                keys = [keys]
+            # keys = key_stack.pop()
+            # if not isinstance(keys, list):
+            #     keys = [keys]
             
             collect_targets: list[Optional[CollectTarget]]
             # Events with SelectAllNodes need to be assigned a CollectTarget
             if isinstance(self.target, SelectAllNode):
                 collect_targets = [
-                    CollectTarget(self.target.collect_target, len(keys), i)
-                    for i in range(len(keys))
+                    CollectTarget(self.target.collect_target, len(targets), i)
+                    for i in range(len(targets))
                 ]
             elif isinstance(self.target, OpNode) and self.target.collect_target is not None:
                 collect_targets = [
-                    self.target.collect_target for i in range(len(keys))
+                    self.target.collect_target for i in range(len(targets))
                 ]
             else:
-                collect_targets = [self.collect_target for i in range(len(keys))]
+                collect_targets = [self.collect_target for i in range(len(targets))]
             
             if isinstance(self.target, OpNode) and self.target.is_conditional:
                 # In this case there will be two targets depending on the condition
@@ -249,13 +268,13 @@ class Event():
                 
                 return [Event(
                     target_true if result else target_false,
-                    key_stack + [key],
+                    # key_stack + [key],
                     self.variable_map,
                     self.dataflow,
                     _id=self._id,
                     collect_target=ct)
 
-                    for key, ct in zip(keys, collect_targets)]
+                    for ct in collect_targets]
                 
             elif len(targets) == 1:
                 # We assume that all keys need to go to the same target
@@ -263,26 +282,26 @@ class Event():
 
                 return [Event(
                     targets[0],
-                    key_stack + [key],
+                    # key_stack + [key],
                     self.variable_map, 
                     self.dataflow,
                     _id=self._id,
                     collect_target=ct)
                     
-                    for key, ct in zip(keys, collect_targets)]
+                    for ct in collect_targets]
             else:
                 # An event with multiple targets should have the same number of
                 # keys in a list on top of its key stack
-                assert len(targets) == len(keys)
+                # assert len(targets) == len(keys)
                 return [Event(
                     target,
-                    key_stack + [key],
+                    # key_stack + [key],
                     self.variable_map, 
                     self.dataflow,
                     _id=self._id,
                     collect_target=ct)
                     
-                    for target, key, ct in zip(targets, keys, collect_targets)]
+                    for target, ct in zip(targets, collect_targets)]
 
 @dataclass
 class EventResult():
