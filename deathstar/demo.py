@@ -207,10 +207,10 @@ def recommend(req_param=None):
 
     return Event(recommend_op.dataflow.entry, ["tempkey"], {"requirement": req_param, "lat": lat, "lon": lon}, recommend_op.dataflow)
 
-def user_login():
+def user_login(succesfull=True):
     user_id = random.randint(0, 500)
     username = f"Cornell_{user_id}"
-    password = str(user_id) * 10
+    password = str(user_id) * 10 if succesfull else ""
     return Event(OpNode(user_op, InvokeMethod("login")), [username], {"password": password}, None)
 
 def reserve():

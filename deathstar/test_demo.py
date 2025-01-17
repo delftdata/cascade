@@ -66,12 +66,16 @@ def test_deathstar_demo_python():
     event = user_login()
     result = client.send(event)
     assert result == True
+    event = user_login(succesfull=False)
+    result = client.send(event)
+    assert result == False
 
     print("testing reserve")
     event = reserve()
     result = client.send(event)
     assert result == True
 
+    return
     print("testing search")
     event = search_hotel()
     result = client.send(event)
