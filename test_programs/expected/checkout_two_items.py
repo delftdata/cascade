@@ -12,8 +12,8 @@ def buy_two_items_0_compiled(variable_map: dict[str, Any], state: User, key_stac
 
 def buy_two_items_1_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
     key_stack.pop()
-    item_price_1_0 = variable_map['item_prices'][0]
-    item_price_2_0 = variable_map['item_prices'][1]
+    item_price_1_0 = variable_map['item_price_1']
+    item_price_2_0 = variable_map['item_price_2']
     total_price_0 = item_price_1_0 + item_price_2_0
     state.balance -= total_price_0
     return state.balance >= 0
@@ -38,6 +38,29 @@ item_op = StatefulOperator(
 )
 
 def user_buy_two_items_df():
+    df = DataFlow("user.buy_2_items")
+    n0 = OpNode(user_op, InvokeMethod("buy_2_items_0"))
+    n1 = OpNode(
+        item_op, 
+        InvokeMethod("get_price"), 
+        assign_result_to="item_price_1", 
+    )
+    n2 = OpNode(
+        item_op, 
+        InvokeMethod("get_price"), 
+        assign_result_to="item_price_2", 
+    )
+    n3 = OpNode(user_op, InvokeMethod("buy_2_items_1"))
+    df.add_edge(Edge(n0, n1))
+    df.add_edge(Edge(n0, n2))
+    df.add_edge(Edge(n1, n2))
+    df.add_edge(Edge(n2, n3))
+    df.entry = n0
+    return df
+
+
+# For future optimizations (not used)
+def user_buy_two_items_df_parallelized():
     df = DataFlow("user.buy_2_items")
     n0 = OpNode(user_op, InvokeMethod("buy_2_items_0"))
     n3 = CollectNode(assign_result_to="item_prices", read_results_from="item_price")
