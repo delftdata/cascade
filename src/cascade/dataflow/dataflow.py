@@ -58,6 +58,7 @@ class SelectAllNode(Node):
     cls: Type
     collect_target: 'CollectNode'
 
+
 @dataclass
 class MergeNode(Node):
     """A node in a `Dataflow` corresponding to a merge operator. 
