@@ -8,7 +8,7 @@ from typing import Any
 
 from pyflink.datastream.data_stream import CloseableIterator
 
-from cascade.dataflow.dataflow import CollectNode, DataFlow, Edge, Event, EventResult, Filter, InitClass, InvokeMethod, MergeNode, OpNode, SelectAllNode
+from cascade.dataflow.dataflow import CollectNode, DataFlow, Edge, Event, EventResult, InitClass, InvokeMethod, OpNode, SelectAllNode
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from cascade.runtime.flink_runtime import FlinkOperator, FlinkRuntime, FlinkStatelessOperator
 from confluent_kafka import Producer

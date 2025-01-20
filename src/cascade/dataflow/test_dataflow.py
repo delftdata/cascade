@@ -1,5 +1,5 @@
 from typing import Any
-from cascade.dataflow.dataflow import CollectNode, CollectTarget, DataFlow, Edge, Event, EventResult, InvokeMethod, MergeNode, OpNode
+from cascade.dataflow.dataflow import CollectNode, CollectTarget, DataFlow, Edge, Event, EventResult, InvokeMethod, OpNode
 from cascade.dataflow.operator import StatefulOperator
 
 class DummyUser:

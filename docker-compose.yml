@@ -27,6 +27,9 @@ services:
       # Required for a single node cluster
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
+      # Change timestamp type for benchmark measurements
+      KAFKA_LOG_MESSAGE_TIMESTAMP_TYPE: LogAppendTime
+
   kafka-ui:
     image: ghcr.io/kafbat/kafka-ui:latest
     ports:

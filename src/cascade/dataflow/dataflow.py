@@ -60,14 +60,6 @@ class SelectAllNode(Node):
 
 
 @dataclass
-class MergeNode(Node):
-    """A node in a `Dataflow` corresponding to a merge operator. 
-    
-    It will aggregate incoming edges and output them as a list to the outgoing edge.
-    Their actual implementation is runtime-dependent."""
-    pass
-
-@dataclass
 class CollectNode(Node):
     """A node in a `Dataflow` corresponding to a merge operator. 
     
