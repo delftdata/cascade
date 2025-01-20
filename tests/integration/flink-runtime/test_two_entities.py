@@ -10,8 +10,8 @@ import pytest
 def test_two_entities():
     runtime = FlinkRuntime("test_two_entities")
     runtime.init()
-    runtime.add_operator(FlinkOperator(item_op))
-    runtime.add_operator(FlinkOperator(user_op))
+    runtime.add_operator(item_op)
+    runtime.add_operator(user_op)
 
     # Create a User object
     foo_user = User("foo", 100)

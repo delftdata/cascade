@@ -99,8 +99,8 @@ get_nearby_op.dataflow = df
 def test_nearby_hotels():
     runtime = FlinkRuntime("test_nearby_hotels")
     runtime.init()
-    runtime.add_operator(FlinkOperator(hotel_op))
-    runtime.add_stateless_operator(FlinkStatelessOperator(get_nearby_op))
+    runtime.add_operator(hotel_op)
+    runtime.add_stateless_operator(get_nearby_op)
 
     # Create Hotels
     hotels = []

@@ -10,8 +10,8 @@ import pytest
 def test_merge_operator():
     runtime = FlinkRuntime("test_collect_operator")
     runtime.init()
-    runtime.add_operator(FlinkOperator(item_op))
-    runtime.add_operator(FlinkOperator(user_op))
+    runtime.add_operator(item_op)
+    runtime.add_operator(user_op)
 
 
     # Create a User object
