@@ -1,5 +1,5 @@
 from typing import Any
-from cascade.dataflow.dataflow import DataFlow, Edge, Event, EventResult, InvokeMethod, OpNode
+from cascade.dataflow.dataflow import CollectNode, CollectTarget, DataFlow, Edge, Event, EventResult, InvokeMethod, OpNode
 from cascade.dataflow.operator import StatefulOperator
 
 class DummyUser:
@@ -79,9 +79,19 @@ def test_simple_df_propogation():
 def test_merge_df_propogation():
     df = DataFlow("user.buy_2_items")
     n0 = OpNode(DummyUser, InvokeMethod("buy_2_items_0"))
-    n1 = OpNode(DummyItem, InvokeMethod("get_price"))
-    n2 = OpNode(DummyItem, InvokeMethod("get_price"))
-    n3 = MergeNode()
+    n3 = CollectNode(assign_result_to="item_prices", read_results_from="item_price")
+    n1 = OpNode(
+        DummyItem, 
+        InvokeMethod("get_price"), 
+        assign_result_to="item_price", 
+        collect_target=CollectTarget(n3, 2, 0)
+    )
+    n2 = OpNode(
+        DummyItem, 
+        InvokeMethod("get_price"), 
+        assign_result_to="item_price", 
+        collect_target=CollectTarget(n3, 2, 1)
+    )
     n4 = OpNode(DummyUser, InvokeMethod("buy_2_items_1"))
     df.add_edge(Edge(n0, n1))
     df.add_edge(Edge(n0, n2))
