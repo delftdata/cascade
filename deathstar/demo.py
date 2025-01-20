@@ -20,9 +20,9 @@ from deathstar.entities.user import User, user_op
 
 class DeathstarDemo():
     def __init__(self):
-        self.init_user = OpNode(user_op, InitClass())
-        self.init_hotel = OpNode(hotel_op, InitClass())
-        self.init_flight = OpNode(flight_op, InitClass())
+        self.init_user = OpNode(User, InitClass(), read_key_from="user_id")
+        self.init_hotel = OpNode(Hotel, InitClass(), read_key_from="key")
+        self.init_flight = OpNode(Flight, InitClass(), read_key_from="id")
     
     def init_runtime(self, runtime, **kwargs):
         self.runtime = runtime
@@ -139,7 +139,7 @@ class DeathstarDemo():
         # populate users
         self.users = [User(f"Cornell_{i}", str(i) * 10) for i in range(501)]
         for user in self.users:
-            event = Event(self.init_user, [user.id], {"user_id": user.id, "password": user.password}, None)
+            event = Event(self.init_user, {"user_id": user.id, "password": user.password}, None)
             self.runtime.send(event)
 
         # populate hotels
@@ -150,7 +150,7 @@ class DeathstarDemo():
             price = prices[i] 
             hotel = Hotel(str(i), 10, geo, rate, price)
             self.hotels.append(hotel)
-            event = Event(self.init_hotel, [hotel.key], 
+            event = Event(self.init_hotel, 
                           {
                             "key": hotel.key,
                             "cap": hotel.cap,
@@ -163,13 +163,13 @@ class DeathstarDemo():
         # populate flights
         self.flights = [Flight(str(i), 10) for i in range(100)]
         for flight in self.flights[:-1]:
-            event = Event(self.init_flight, [flight.id], {
+            event = Event(self.init_flight, {
                 "id": flight.id,
                 "cap": flight.cap
             }, None)
             self.runtime.send(event)
         flight = self.flights[-1]
-        event = Event(self.init_flight, [flight.id], {
+        event = Event(self.init_flight, {
                 "id": flight.id,
                 "cap": flight.cap
         }, None)
@@ -192,7 +192,7 @@ def search_hotel():
     lon = -122.095 + (random.randint(0, 325) - 157.0) / 1000.0
 
     # We don't really use the in_date, out_date information
-    return Event(search_op.dataflow.entry, ["tempkey"], {"lat": lat, "lon": lon}, search_op.dataflow)
+    return Event(search_op.dataflow.entry, {"lat": lat, "lon": lon}, search_op.dataflow)
 
 def recommend(req_param=None):
     if req_param is None:
@@ -205,13 +205,15 @@ def recommend(req_param=None):
     lat = 38.0235 + (random.randint(0, 481) - 240.5) / 1000.0
     lon = -122.095 + (random.randint(0, 325) - 157.0) / 1000.0
 
-    return Event(recommend_op.dataflow.entry, ["tempkey"], {"requirement": req_param, "lat": lat, "lon": lon}, recommend_op.dataflow)
+
+    return Event(recommend_op.dataflow.entry, {"requirement": req_param, "lat": lat, "lon": lon}, recommend_op.dataflow)
 
 def user_login(succesfull=True):
     user_id = random.randint(0, 500)
     username = f"Cornell_{user_id}"
     password = str(user_id) * 10 if succesfull else ""
-    return Event(OpNode(user_op, InvokeMethod("login")), [username], {"password": password}, None)
+    return Event(OpNode(User, InvokeMethod("login"), read_key_from="user_key"), {"user_key": username, "password": password}, None)
+
 
 def reserve():
     hotel_id = random.randint(0, 99)
@@ -221,7 +223,14 @@ def reserve():
     # user.order(flight, hotel)
     user_id = "Cornell_" + str(random.randint(0, 500))
 
-    return Event(user_op.dataflows["order"].entry, [user_id], {"flight": str(flight_id), "hotel": str(hotel_id)}, user_op.dataflows["order"])
+    return Event(
+        user_op.dataflows["order"].entry, 
+        {
+            "user_key": user_id, 
+            "flight_key": str(flight_id), 
+            "hotel_key": str(hotel_id)
+        }, 
+        user_op.dataflows["order"])
 
 def deathstar_workload_generator():
     search_ratio = 0.6
@@ -261,7 +270,7 @@ def benchmark_runner(proc_num) -> dict[int, dict]:
                 time.sleep(sleep_time)
             event = next(deathstar_generator)
             # func_name = event.dataflow.name if event.dataflow is not None else "login" # only login has no dataflow
-            key = event.key_stack[0]
+            # key = event.key_stack[0]
             # params = event.variable_map
             client.send(event)
             # futures[event._id] = {"event": f'{func_name} {key}->{params}'}

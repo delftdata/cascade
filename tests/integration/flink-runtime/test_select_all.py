@@ -1,5 +1,5 @@
 """
-Basically we need a way to search through all state.
+The select all operator is used to fetch all keys for a single entity
 """
 import math
 import random
@@ -8,10 +8,9 @@ from typing import Any
 
 from pyflink.datastream.data_stream import CloseableIterator
 
-from cascade.dataflow.dataflow import CollectNode, DataFlow, Edge, Event, EventResult, InitClass, InvokeMethod, OpNode, SelectAllNode
+from cascade.dataflow.dataflow import CollectNode, DataFlow, Edge, Event, EventResult,  InitClass, InvokeMethod, OpNode, SelectAllNode, StatelessOpNode
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from cascade.runtime.flink_runtime import FlinkOperator, FlinkRuntime, FlinkStatelessOperator
-from confluent_kafka import Producer
 import time
 import pytest
 
@@ -35,13 +34,11 @@ class Hotel:
         return f"Hotel({self.name}, {self.loc})"
 
 
-def distance_compiled(variable_map: dict[str, Any], state: Hotel, key_stack: list[str]) -> Any:
-    key_stack.pop()
+def distance_compiled(variable_map: dict[str, Any], state: Hotel) -> Any:
     loc = variable_map["loc"]
     return math.sqrt((state.loc.x - loc.x) ** 2 + (state.loc.y - loc.y) ** 2)
 
-def get_name_compiled(variable_map: dict[str, Any], state: Hotel, key_stack: list[str]) -> Any:
-    key_stack.pop()
+def get_name_compiled(variable_map: dict[str, Any], state: Hotel) -> Any:
     return state.name
 
 hotel_op = StatefulOperator(Hotel, 
@@ -55,24 +52,19 @@ def get_nearby(hotels: list[Hotel], loc: Geo, dist: float):
 
 
 # We compile just the predicate, the select is implemented using a selectall node
-def get_nearby_predicate_compiled_0(variable_map: dict[str, Any], key_stack: list[str]):
-    # the top of the key_stack is already the right key, so in this case we don't need to do anything
-    # loc = variable_map["loc"]
-    # we need the hotel_key for later. (body_compiled_0)
-    variable_map["hotel_key"] = key_stack[-1]
+def get_nearby_predicate_compiled_0(variable_map: dict[str, Any]):
     pass
 
-def get_nearby_predicate_compiled_1(variable_map: dict[str, Any], key_stack: list[str]) -> bool:
+def get_nearby_predicate_compiled_1(variable_map: dict[str, Any]) -> bool:
     loc = variable_map["loc"]
     dist = variable_map["dist"]
     hotel_dist = variable_map["hotel_distance"]
-    # key_stack.pop() # shouldn't pop because this function is stateless
     return hotel_dist < dist
 
-def get_nearby_body_compiled_0(variable_map: dict[str, Any], key_stack: list[str]):
-    key_stack.append(variable_map["hotel_key"])
+def get_nearby_body_compiled_0(variable_map: dict[str, Any]):
+    pass
 
-def get_nearby_body_compiled_1(variable_map: dict[str, Any], key_stack: list[str]) -> str:
+def get_nearby_body_compiled_1(variable_map: dict[str, Any]) -> str:
     return variable_map["hotel_name"]
 
 get_nearby_op = StatelessOperator({
@@ -85,13 +77,13 @@ get_nearby_op = StatelessOperator({
 # dataflow for getting all hotels within region
 df = DataFlow("get_nearby")
 n7 = CollectNode("get_nearby_result", "get_nearby_body")
-n0 = SelectAllNode(Hotel, n7)
-n1 = OpNode(get_nearby_op, InvokeMethod("get_nearby_predicate_compiled_0"))
-n2 = OpNode(hotel_op, InvokeMethod("distance"), assign_result_to="hotel_distance")
-n3 = OpNode(get_nearby_op, InvokeMethod("get_nearby_predicate_compiled_1"), is_conditional=True)
-n4 = OpNode(get_nearby_op, InvokeMethod("get_nearby_body_compiled_0"))
-n5 = OpNode(hotel_op, InvokeMethod("get_name"), assign_result_to="hotel_name")
-n6 = OpNode(get_nearby_op, InvokeMethod("get_nearby_body_compiled_1"), assign_result_to="get_nearby_body")
+n0 = SelectAllNode(Hotel, n7, assign_key_to="hotel_key")
+n1 = StatelessOpNode(get_nearby_op, InvokeMethod("get_nearby_predicate_compiled_0"))
+n2 = OpNode(Hotel, InvokeMethod("distance"), assign_result_to="hotel_distance", read_key_from="hotel_key")
+n3 = StatelessOpNode(get_nearby_op, InvokeMethod("get_nearby_predicate_compiled_1"), is_conditional=True)
+n4 = StatelessOpNode(get_nearby_op, InvokeMethod("get_nearby_body_compiled_0"))
+n5 = OpNode(Hotel, InvokeMethod("get_name"), assign_result_to="hotel_name", read_key_from="hotel_key")
+n6 = StatelessOpNode(get_nearby_op, InvokeMethod("get_nearby_body_compiled_1"), assign_result_to="get_nearby_body")
 
 df.add_edge(Edge(n0, n1))
 df.add_edge(Edge(n1, n2))
@@ -107,22 +99,22 @@ get_nearby_op.dataflow = df
 def test_nearby_hotels():
     runtime = FlinkRuntime("test_nearby_hotels")
     runtime.init()
-    runtime.add_operator(FlinkOperator(hotel_op))
-    runtime.add_stateless_operator(FlinkStatelessOperator(get_nearby_op))
+    runtime.add_operator(hotel_op)
+    runtime.add_stateless_operator(get_nearby_op)
 
     # Create Hotels
     hotels = []
-    init_hotel = OpNode(hotel_op, InitClass())
+    init_hotel = OpNode(Hotel, InitClass(), read_key_from="name")
     random.seed(42)
     for i in range(20):
         coord_x = random.randint(-10, 10)
         coord_y = random.randint(-10, 10)
         hotel = Hotel(f"h_{i}", Geo(coord_x, coord_y))
-        event = Event(init_hotel, [hotel.name], {"name": hotel.name, "loc": hotel.loc}, None) 
+        event = Event(init_hotel, {"name": hotel.name, "loc": hotel.loc}, None) 
         runtime.send(event)
         hotels.append(hotel)
 
-    collected_iterator: CloseableIterator = runtime.run(run_async=True, collect=True)
+    collected_iterator: CloseableIterator = runtime.run(run_async=True, output='collect')
     records = []
     def wait_for_event_id(id: int) -> EventResult:
         for record in collected_iterator:
@@ -145,12 +137,11 @@ def test_nearby_hotels():
     print("creating hotels")
     # Wait for hotels to be created
     wait_for_n_records(20)
-    time.sleep(3) # wait for all hotels to be registered
+    time.sleep(10) # wait for all hotels to be registered
 
     dist = 5
     loc = Geo(0, 0)
-    # because of how the key stack works, we need to supply a key here
-    event = Event(n0, ["workaround_key"], {"loc": loc, "dist": dist}, df) 
+    event = Event(n0, {"loc": loc, "dist": dist}, df) 
     runtime.send(event, flush=True)
     
     nearby = []

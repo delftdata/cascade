@@ -2,23 +2,20 @@ from typing import Any
 from cascade.dataflow.dataflow import DataFlow, Edge, InvokeMethod, OpNode
 from cascade.dataflow.operator import StatefulOperator
 
-def order_compiled_entry_0(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    key_stack.append(variable_map["hotel"])
+def order_compiled_entry_0(variable_map: dict[str, Any], state: User) -> Any:
+    pass
 
-def order_compiled_entry_1(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    key_stack.append(variable_map["flight"])
+def order_compiled_entry_1(variable_map: dict[str, Any], state: User) -> Any:
+    pass
 
-def order_compiled_if_cond(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
+def order_compiled_if_cond(variable_map: dict[str, Any], state: User) -> Any:
     return variable_map["hotel_reserve"] and variable_map["flight_reserve"]
 
-def order_compiled_if_body(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    key_stack.pop()
+def order_compiled_if_body(variable_map: dict[str, Any], state: User) -> Any:
     return True
 
-def order_compiled_else_body(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    key_stack.pop()
+def order_compiled_else_body(variable_map: dict[str, Any], state: User) -> Any:
     return False
-
 
 user_op = StatefulOperator(
     User,
@@ -29,7 +26,7 @@ user_op = StatefulOperator(
         "order_compiled_if_body": order_compiled_if_body,
         "order_compiled_else_body": order_compiled_else_body
     },
-    {} # dataflows (filled later)
+    {}
 )
 
 # For now, the dataflow will be serial instead of parallel (calling hotel, then 
@@ -39,13 +36,13 @@ user_op = StatefulOperator(
 # before the first entity call).
 def user_order_df():
     df = DataFlow("user_order")
-    n0 = OpNode(user_op, InvokeMethod("order_compiled_entry_0"))
-    n1 = OpNode(hotel_op, InvokeMethod("reserve"), assign_result_to="hotel_reserve")
-    n2 = OpNode(user_op, InvokeMethod("order_compiled_entry_1"))
-    n3 = OpNode(flight_op, InvokeMethod("reserve"), assign_result_to="flight_reserve")
-    n4 = OpNode(user_op, InvokeMethod("order_compiled_if_cond"), is_conditional=True)
-    n5 = OpNode(user_op, InvokeMethod("order_compiled_if_body"))
-    n6 = OpNode(user_op, InvokeMethod("order_compiled_else_body"))
+    n0 = OpNode(User, InvokeMethod("order_compiled_entry_0"), read_key_from="user_key")
+    n1 = OpNode(Hotel, InvokeMethod("reserve"), assign_result_to="hotel_reserve", read_key_from="hotel_key")
+    n2 = OpNode(User, InvokeMethod("order_compiled_entry_1"), read_key_from="user_key")
+    n3 = OpNode(Flight, InvokeMethod("reserve"), assign_result_to="flight_reserve", read_key_from="flight_key")
+    n4 = OpNode(User, InvokeMethod("order_compiled_if_cond"), is_conditional=True, read_key_from="user_key")
+    n5 = OpNode(User, InvokeMethod("order_compiled_if_body"), read_key_from="user_key")
+    n6 = OpNode(User, InvokeMethod("order_compiled_else_body"), read_key_from="user_key")
 
     df.add_edge(Edge(n0, n1))
     df.add_edge(Edge(n1, n2))

@@ -18,8 +18,7 @@ class Flight():
 
 #### COMPILED FUNCTIONS (ORACLE) #####
 
-def reserve_compiled(variable_map: dict[str, Any], state: Flight, key_stack: list[str]) -> Any:
-    key_stack.pop()
+def reserve_compiled(variable_map: dict[str, Any], state: Flight) -> Any:
     if state.cap <= 0:
         return False
     return True

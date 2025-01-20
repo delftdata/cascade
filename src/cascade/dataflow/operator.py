@@ -10,20 +10,19 @@ class MethodCall(Generic[T], Protocol):
 
     It corresponds to functions with the following signature:
     ```py
-    def my_compiled_method(*args: Any, state: T, key_stack: list[str], **kwargs: Any) -> Any:
+    def my_compiled_method(variable_map: dict[str, Any], state: T) -> Any
         ...
     ```
 
-    `T` corresponds to a Python class, which, if modified, should return as the 2nd item in the tuple.
-    
-    The first item in the returned tuple corresponds to the actual return value of the function.
+    The variable_map contains a mapping from identifiers (variables/keys) to
+    their values.
+    The state of type `T` corresponds to a Python class.
 
-    The third item in the tuple corresponds to the `key_stack` which should be updated accordingly. 
-    Notably, a terminal function should pop a key off the `key_stack`, whereas a function that calls
-    other functions should push the correct key(s) onto the `key_stack`.
+        
+    The value returned corresponds to the value treturned by the function.
     """
 
-    def __call__(self, variable_map: dict[str, Any], state: T, key_stack: list[str]) -> dict[str, Any]: ...
+    def __call__(self, variable_map: dict[str, Any], state: T) -> Any: ...
     """@private"""
 
 
@@ -61,14 +60,13 @@ class StatefulOperator(Generic[T], Operator):
         Here, the class could be turned into a StatefulOperator as follows:
 
         ```py
-        def user_get_balance(variable_map: dict[str, Any], state: User, key_stack: list[str]):
-            key_stack.pop()
+        def user_get_balance(variable_map: dict[str, Any], state: User):
             return state.balance
         
-        def user_buy_item_0(variable_map: dict[str, Any], state: User, key_stack: list[str]):
-            key_stack.append(variable_map['item_key'])
+        def user_buy_item_0(variable_map: dict[str, Any], state: User):
+            pass
             
-        def user_buy_item_1(variable_map: dict[str, Any], state: User, key_stack: list[str]):
+        def user_buy_item_1(variable_map: dict[str, Any], state: User):
             state.balance -= variable_map['item_get_price']
             return state.balance >= 0
 
@@ -100,19 +98,19 @@ class StatefulOperator(Generic[T], Operator):
         """Create an instance of the underlying class. Equivalent to `T.__init__(*args, **kwargs)`."""
         return self.entity(*args, **kwargs)
 
-    def handle_invoke_method(self, method: InvokeMethod, variable_map: dict[str, Any], state: T, key_stack: list[str]) -> dict[str, Any]:
+    def handle_invoke_method(self, method: InvokeMethod, variable_map: dict[str, Any], state: T) -> dict[str, Any]:
         """Invoke the method of the underlying class.
         
         The `cascade.dataflow.dataflow.InvokeMethod` object must contain a method identifier 
         that exists on the underlying compiled class functions. 
 
-        The state `T` and key_stack is passed along to the function, and may be modified. 
+        The state `T` is passed along to the function, and may be modified. 
         """
-        return self._methods[method.method_name](variable_map=variable_map, state=state, key_stack=key_stack)
+        return self._methods[method.method_name](variable_map=variable_map, state=state)
 
 
 class StatelessMethodCall(Protocol):
-    def __call__(self, variable_map: dict[str, Any],  key_stack: list[str]) -> Any: ...
+    def __call__(self, variable_map: dict[str, Any]) -> Any: ...
     """@private"""
 
 
@@ -123,13 +121,13 @@ class StatelessOperator(Operator):
         self._methods = methods
         self.dataflow = dataflow
        
-    def handle_invoke_method(self, method: InvokeMethod, variable_map: dict[str, Any], key_stack: list[str]) -> dict[str, Any]:
+    def handle_invoke_method(self, method: InvokeMethod, variable_map: dict[str, Any]) -> dict[str, Any]:
         """Invoke the method of the underlying class.
         
         The `cascade.dataflow.dataflow.InvokeMethod` object must contain a method identifier 
         that exists on the underlying compiled class functions. 
 
-        The state `T` and key_stack is passed along to the function, and may be modified. 
+        The state `T` is passed along to the function, and may be modified. 
         """
-        return self._methods[method.method_name](variable_map=variable_map, key_stack=key_stack)
+        return self._methods[method.method_name](variable_map=variable_map)
 
