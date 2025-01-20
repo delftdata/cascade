@@ -209,7 +209,7 @@ class FlinkCollectOperator(KeyedProcessFunction):
             
             collection = [r.val for r in collection if r.val is not None] # type: ignore (r is of type Arrived)
             event.variable_map[target_node.assign_result_to] = collection
-            new_events = event.propogate(event.key_stack, collection)
+            new_events = event.propogate(collection)
 
             self.collection.clear() 
             if isinstance(new_events, EventResult):

@@ -64,13 +64,9 @@ def buy_item_1_compiled(variable_map: dict[str, Any], state: User, key_stack: li
 
 
 def buy_2_items_0_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    key_stack.append(
-        [variable_map["item1_key"], variable_map["item2_key"]]
-    )
     return None
 
 def buy_2_items_1_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    key_stack.pop()
     state.balance -= variable_map["item_prices"][0] + variable_map["item_prices"][1]
     return state.balance >= 0
 
@@ -105,32 +101,34 @@ def user_buy_item_df():
     df.entry = n0
     return df
 
-# def user_buy_2_items_df():
-#     df = DataFlow("user.buy_2_items")
-#     n0 = OpNode(user_op, InvokeMethod("buy_2_items_0"))
-#     n3 = CollectNode(assign_result_to="item_prices", read_results_from="item_price")
-#     n1 = OpNode(
-#         item_op, 
-#         InvokeMethod("get_price"), 
-#         assign_result_to="item_price", 
-#         collect_target=CollectTarget(n3, 2, 0)
-#     )
-#     n2 = OpNode(
-#         item_op, 
-#         InvokeMethod("get_price"), 
-#         assign_result_to="item_price", 
-#         collect_target=CollectTarget(n3, 2, 1)
-#     )
-#     n4 = OpNode(user_op, InvokeMethod("buy_2_items_1"))
-#     df.add_edge(Edge(n0, n1))
-#     df.add_edge(Edge(n0, n2))
-#     df.add_edge(Edge(n1, n3))
-#     df.add_edge(Edge(n2, n3))
-#     df.add_edge(Edge(n3, n4))
-#     df.entry = n0
-#     return df
+def user_buy_2_items_df():
+    df = DataFlow("user.buy_2_items")
+    n0 = OpNode(User, InvokeMethod("buy_2_items_0"), read_key_from="user_key")
+    n3 = CollectNode(assign_result_to="item_prices", read_results_from="item_price")
+    n1 = OpNode(
+        Item, 
+        InvokeMethod("get_price"), 
+        assign_result_to="item_price", 
+        collect_target=CollectTarget(n3, 2, 0),
+        read_key_from="item1_key"
+    )
+    n2 = OpNode(
+        Item, 
+        InvokeMethod("get_price"), 
+        assign_result_to="item_price", 
+        collect_target=CollectTarget(n3, 2, 1),
+        read_key_from="item2_key"
+    )
+    n4 = OpNode(User, InvokeMethod("buy_2_items_1"), read_key_from="user_key")
+    df.add_edge(Edge(n0, n1))
+    df.add_edge(Edge(n0, n2))
+    df.add_edge(Edge(n1, n3))
+    df.add_edge(Edge(n2, n3))
+    df.add_edge(Edge(n3, n4))
+    df.entry = n0
+    return df
 
 user_op.dataflows =  {
-        # "buy_2_items": user_buy_2_items_df(),
+        "buy_2_items": user_buy_2_items_df(),
         "buy_item": user_buy_item_df()
     }
