@@ -12,7 +12,7 @@ from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, V
 from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRecordSerializationSchema, KafkaSource, KafkaSink
 from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 import pickle 
-from cascade.dataflow.dataflow import Arrived, CollectNode, CollectTarget, Event, EventResult, Filter, InitClass, InvokeMethod, MergeNode, Node, NotArrived, OpNode, Operator, Result, SelectAllNode, StatelessOpNode
+from cascade.dataflow.dataflow import Arrived, CollectNode, CollectTarget, Event, EventResult, Filter, InitClass, InvokeMethod, Node, NotArrived, OpNode, Result, SelectAllNode, StatelessOpNode
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from confluent_kafka import Producer, Consumer
 import logging
@@ -172,7 +172,7 @@ class FlinkSelectAllOperator(KeyedProcessFunction):
 
 class FlinkCollectOperator(KeyedProcessFunction):
     """Flink implementation of a merge operator."""
-    def __init__(self): #, merge_node: MergeNode) -> None:
+    def __init__(self): 
         self.collection: ValueState = None # type: ignore (expect state to be initialised on .open())
 
     def open(self, runtime_context: RuntimeContext):
@@ -441,7 +441,7 @@ class FlinkRuntime():
                 .process(FlinkCollectOperator())
                 .name("Collect")
         )
-        """Stream that ingests events with an `cascade.dataflow.dataflow.MergeNode` target"""
+        """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 
         self.stateless_op_streams = []
         self.stateful_op_streams = []
@@ -450,9 +450,10 @@ class FlinkRuntime():
         self.producer = Producer({'bootstrap.servers': kafka_broker})
         logger.debug("FlinkRuntime initialized")
     
-    def add_operator(self, flink_op: FlinkOperator):
+    def add_operator(self, op: StatefulOperator):
         """Add a `FlinkOperator` to the Flink datastream."""
-       
+        flink_op = FlinkOperator(op)
+
         op_stream = (
             self.stateful_op_stream.filter(lambda e: e.target.entity == flink_op.operator.entity)
                 .key_by(lambda e: e.variable_map[e.target.read_key_from])
@@ -461,9 +462,10 @@ class FlinkRuntime():
             )
         self.stateful_op_streams.append(op_stream)
 
-    def add_stateless_operator(self, flink_op: FlinkStatelessOperator):
+    def add_stateless_operator(self, op: StatelessOperator):
         """Add a `FlinkStatelessOperator` to the Flink datastream."""
-       
+        flink_op = FlinkStatelessOperator(op)
+
         op_stream = (
             self.stateless_op_stream
                 .filter(lambda e: e.target.operator.dataflow.name == flink_op.operator.dataflow.name)
@@ -550,6 +552,7 @@ class FlinkClientSync:
                 "bootstrap.servers": self.kafka_url, 
                 "group.id": str(uuid.uuid4()), 
                 "auto.offset.reset": "earliest",
+                "api.version.request": True
                 # "enable.auto.commit": False,
                 # "fetch.min.bytes": 1
             })
@@ -565,9 +568,9 @@ class FlinkClientSync:
                 continue
             try:
                 event_result: EventResult = pickle.loads(msg.value())
-                ts = time.time()
+                ts = msg.timestamp()
                 if event_result.event_id in self._futures:
-                    if (r := self._futures[event_result.event_id]) != None:
+                    if (r := self._futures[event_result.event_id]["ret"]) != None:
                         logger.warning(f"Recieved EventResult with id {event_result.event_id} more than once: {event_result} replaced previous: {r}")
                     self._futures[event_result.event_id]["ret"] = event_result
                     self._futures[event_result.event_id]["ret_t"] = ts
@@ -577,6 +580,9 @@ class FlinkClientSync:
         
         self.consumer.close()
 
+    def flush(self):
+        self.producer.flush()
+
     def send(self, event: Event, flush=False) -> int:
         """Send an event to the Kafka source and block until an EventResult is recieved.
 
@@ -585,16 +591,19 @@ class FlinkClientSync:
         :return: The result event if recieved
         :raises Exception: If an exception occured recieved or deserializing the message.
         """
-        self.producer.produce(self.input_topic, value=pickle.dumps(event))
-        if flush:
-            self.producer.flush()
-
         self._futures[event._id] = {
             "sent": event,
-            "sent_t": time.time(),
+            "sent_t": None,
             "ret": None,
             "ret_t": None
         }
+
+        def set_ts(ts):
+            self._futures[event._id]["sent_t"] = ts
+
+        self.producer.produce(self.input_topic, value=pickle.dumps(event), on_delivery=lambda err, msg: set_ts(msg.timestamp()))
+        if flush:
+            self.producer.flush()
         return event._id        
 
     def close(self):
