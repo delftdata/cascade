@@ -40,25 +40,19 @@ class Item:
         return f"Item(key='{self.key}', price={self.price})"
 
 def update_balance_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    # key_stack.pop() # final function
     state.balance += variable_map["amount"]
     return state.balance >= 0
 
 def get_balance_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    # key_stack.pop() # final function
     return state.balance
 
 def get_price_compiled(variable_map: dict[str, Any], state: Item, key_stack: list[str]) -> Any:
-    # key_stack.pop() # final function
     return state.price
 
-# Items (or other operators) are passed by key always
 def buy_item_0_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    # key_stack.append(variable_map["item_key"])
     return None
 
 def buy_item_1_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    # key_stack.pop()
     state.balance = state.balance - variable_map["item_price"]
     return state.balance >= 0
 

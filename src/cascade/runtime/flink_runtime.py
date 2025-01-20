@@ -3,7 +3,7 @@ import os
 import time
 import uuid
 import threading
-from typing import Literal, Optional, Type, Union
+from typing import Any, Literal, Optional, Type, Union
 from pyflink.common.typeinfo import Types, get_gateway
 from pyflink.common import Configuration, DeserializationSchema, SerializationSchema, WatermarkStrategy
 from pyflink.datastream.connectors import DeliveryGuarantee
@@ -35,6 +35,10 @@ class FlinkRegisterKeyNode(Node):
     """
     key: str
     cls: Type
+
+    def propogate(self, event: Event, targets: list[Node], result: Any, **kwargs) -> list[Event]:
+        """A key registration event does not propogate."""
+        return []
 
 class FlinkOperator(KeyedProcessFunction):
     """Wraps an `cascade.dataflow.datflow.StatefulOperator` in a KeyedProcessFunction so that it can run in Flink.
@@ -162,7 +166,7 @@ class FlinkSelectAllOperator(KeyedProcessFunction):
             
             # Propogate the event to the next node
             new_events = event.propogate(None, select_all_keys=new_keys)
-            print(len(new_events), num_events)
+            assert isinstance(new_events, list), "SelectAll nodes shouldn't directly produce EventResults"
             assert num_events == len(new_events)
             
             logger.debug(f"SelectAllOperator [{event.target.cls.__name__}]: Propogated {num_events} events with target: {event.target.collect_target}")
