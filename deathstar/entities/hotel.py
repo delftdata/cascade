@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 from cascade.dataflow.operator import StatefulOperator
 from geopy.distance import distance
 
@@ -59,18 +59,15 @@ class Hotel():
 
 #### COMPILED FUNCTIONS (ORACLE) #####
 
-def reserve_compiled(variable_map: dict[str, Any], state: Hotel, key_stack: list[str]) -> Any:
-    key_stack.pop()
+def reserve_compiled(variable_map: dict[str, Any], state: Hotel) -> Any:
     if state.cap <= 0:
         return False
     return True
 
-def get_geo_compiled(variable_map: dict[str, Any], state: Hotel, key_stack: list[str]) -> Any:
-    key_stack.pop()
+def get_geo_compiled(variable_map: dict[str, Any], state: Hotel) -> Any:
     return state.geo
 
-def get_price_compiled(variable_map: dict[str, Any], state: Hotel, key_stack: list[str]) -> Any:
-    key_stack.pop()
+def get_price_compiled(variable_map: dict[str, Any], state: Hotel) -> Any:
     return state.price
 
 hotel_op = StatefulOperator(
