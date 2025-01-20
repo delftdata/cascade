@@ -1,6 +1,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional, Type, Union
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Prevent circular imports
+    from cascade.dataflow.operator import StatelessOperator
+    
 
 class Operator(ABC):
     pass
@@ -106,7 +112,7 @@ class StatelessOpNode(Node):
     
     A `Dataflow` may reference the same `StatefulOperator` multiple times. 
     The `StatefulOperator` that this node belongs to is referenced by `cls`."""
-    operator: Operator # should be StatelessOperator but circular import!
+    operator: 'StatelessOperator'
     method_type: InvokeMethod
     """Which variable to take as the key for this StatefulOperator"""
     
@@ -272,11 +278,6 @@ class Event():
     
     target: 'Node'
     """The Node that this Event wants to go to."""
-
-    # key_stack: list[str]
-    """The keys this event is concerned with. 
-    The top of the stack, i.e. `key_stack[-1]`, should always correspond to a key 
-    on the StatefulOperator of `target.cls` if `target` is an `OpNode`."""
 
     variable_map: dict[str, Any]
     """A mapping of variable identifiers to values. 

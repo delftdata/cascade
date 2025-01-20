@@ -34,11 +34,11 @@ class Hotel:
         return f"Hotel({self.name}, {self.loc})"
 
 
-def distance_compiled(variable_map: dict[str, Any], state: Hotel, key_stack: list[str]) -> Any:
+def distance_compiled(variable_map: dict[str, Any], state: Hotel) -> Any:
     loc = variable_map["loc"]
     return math.sqrt((state.loc.x - loc.x) ** 2 + (state.loc.y - loc.y) ** 2)
 
-def get_name_compiled(variable_map: dict[str, Any], state: Hotel, key_stack: list[str]) -> Any:
+def get_name_compiled(variable_map: dict[str, Any], state: Hotel) -> Any:
     return state.name
 
 hotel_op = StatefulOperator(Hotel, 
@@ -52,24 +52,19 @@ def get_nearby(hotels: list[Hotel], loc: Geo, dist: float):
 
 
 # We compile just the predicate, the select is implemented using a selectall node
-def get_nearby_predicate_compiled_0(variable_map: dict[str, Any], key_stack: list[str]):
-    # the top of the key_stack is already the right key, so in this case we don't need to do anything
-    # loc = variable_map["loc"]
-    # we need the hotel_key for later. (body_compiled_0)
-    # variable_map["hotel_key"] = key_stack[-1]
+def get_nearby_predicate_compiled_0(variable_map: dict[str, Any]):
     pass
 
-def get_nearby_predicate_compiled_1(variable_map: dict[str, Any], key_stack: list[str]) -> bool:
+def get_nearby_predicate_compiled_1(variable_map: dict[str, Any]) -> bool:
     loc = variable_map["loc"]
     dist = variable_map["dist"]
     hotel_dist = variable_map["hotel_distance"]
-    # key_stack.pop() # shouldn't pop because this function is stateless
     return hotel_dist < dist
 
-def get_nearby_body_compiled_0(variable_map: dict[str, Any], key_stack: list[str]):
+def get_nearby_body_compiled_0(variable_map: dict[str, Any]):
     pass
 
-def get_nearby_body_compiled_1(variable_map: dict[str, Any], key_stack: list[str]) -> str:
+def get_nearby_body_compiled_1(variable_map: dict[str, Any]) -> str:
     return variable_map["hotel_name"]
 
 get_nearby_op = StatelessOperator({

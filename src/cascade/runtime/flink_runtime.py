@@ -53,7 +53,6 @@ class FlinkOperator(KeyedProcessFunction):
         self.state: ValueState = runtime_context.get_state(descriptor)
 
     def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
-        # key_stack = event.key_stack
 
         # should be handled by filters on this FlinkOperator    
         assert(isinstance(event.target, OpNode)) 
@@ -70,7 +69,6 @@ class FlinkOperator(KeyedProcessFunction):
             # Register the created key in FlinkSelectAllOperator
             register_key_event = Event(
                 FlinkRegisterKeyNode(key, self.operator.entity),
-                # [],
                 {},
                 None,
                 _id = event._id
@@ -79,11 +77,10 @@ class FlinkOperator(KeyedProcessFunction):
             yield register_key_event
 
             # Pop this key from the key stack so that we exit
-            # key_stack.pop()
             self.state.update(pickle.dumps(result))
         elif isinstance(event.target.method_type, InvokeMethod):
             state = pickle.loads(self.state.value())
-            result = self.operator.handle_invoke_method(event.target.method_type, variable_map=event.variable_map, state=state, key_stack=[])
+            result = self.operator.handle_invoke_method(event.target.method_type, variable_map=event.variable_map, state=state)
             
             # TODO: check if state actually needs to be updated
             if state is not None:
@@ -121,7 +118,7 @@ class FlinkStatelessOperator(ProcessFunction):
 
         logger.debug(f"FlinkStatelessOperator {self.operator.dataflow.name}[{event._id}]: Processing: {event.target.method_type}")
         if isinstance(event.target.method_type, InvokeMethod):
-            result = self.operator.handle_invoke_method(event.target.method_type, variable_map=event.variable_map, key_stack=[])  
+            result = self.operator.handle_invoke_method(event.target.method_type, variable_map=event.variable_map)  
         else:
             raise Exception(f"A StatelessOperator cannot compute event type: {event.target.method_type}")
         
@@ -160,7 +157,6 @@ class FlinkSelectAllOperator(KeyedProcessFunction):
             logger.debug(f"SelectAllOperator [{event.target.cls.__name__}]: Selecting all")
 
             # Yield all the keys we now about
-            # event.key_stack.append(state)
             new_keys = state
             num_events = len(state)
             

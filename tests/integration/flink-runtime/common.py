@@ -39,28 +39,28 @@ class Item:
     def __repr__(self):
         return f"Item(key='{self.key}', price={self.price})"
 
-def update_balance_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
+def update_balance_compiled(variable_map: dict[str, Any], state: User) -> Any:
     state.balance += variable_map["amount"]
     return state.balance >= 0
 
-def get_balance_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
+def get_balance_compiled(variable_map: dict[str, Any], state: User) -> Any:
     return state.balance
 
-def get_price_compiled(variable_map: dict[str, Any], state: Item, key_stack: list[str]) -> Any:
+def get_price_compiled(variable_map: dict[str, Any], state: Item) -> Any:
     return state.price
 
-def buy_item_0_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
+def buy_item_0_compiled(variable_map: dict[str, Any], state: User) -> Any:
     return None
 
-def buy_item_1_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
+def buy_item_1_compiled(variable_map: dict[str, Any], state: User) -> Any:
     state.balance = state.balance - variable_map["item_price"]
     return state.balance >= 0
 
 
-def buy_2_items_0_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
+def buy_2_items_0_compiled(variable_map: dict[str, Any], state: User) -> Any:
     return None
 
-def buy_2_items_1_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
+def buy_2_items_1_compiled(variable_map: dict[str, Any], state: User) -> Any:
     state.balance -= variable_map["item_prices"][0] + variable_map["item_prices"][1]
     return state.balance >= 0
 
