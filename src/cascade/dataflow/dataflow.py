@@ -39,8 +39,8 @@ class Node(ABC):
 class OpNode(Node):
     """A node in a `Dataflow` corresponding to a method call of a `StatefulOperator`. 
     
-    A `Dataflow` may reference the same `StatefulOperator` multiple times. 
-    The `StatefulOperator` that this node belongs to is referenced by `cls`."""
+    A `Dataflow` may reference the same entity multiple times. 
+    The `StatefulOperator` that this node belongs to is referenced by `entity`."""
     entity: Type
     method_type: Union[InitClass, InvokeMethod, Filter]
     read_key_from: str
@@ -58,7 +58,7 @@ class StatelessOpNode(Node):
     
     A `Dataflow` may reference the same `StatefulOperator` multiple times. 
     The `StatefulOperator` that this node belongs to is referenced by `cls`."""
-    dataflow: 'DataFlow'
+    operator: Operator # should be StatelessOperator but circular import!
     method_type: InvokeMethod
     """Which variable to take as the key for this StatefulOperator"""
     
@@ -76,6 +76,7 @@ class SelectAllNode(Node):
     Think of this as executing `SELECT * FROM cls`"""
     cls: Type
     collect_target: 'CollectNode'
+    assign_key_to: str
 
 
 @dataclass
@@ -222,12 +223,10 @@ class Event():
             self._id = Event._id_counter
             Event._id_counter += 1
 
-    def propogate(self, result) -> Union['EventResult', list['Event']]:
+    def propogate(self, result, select_all_keys: Optional[list[str]]=None) -> Union['EventResult', list['Event']]:
         """Propogate this event through the Dataflow."""
 
-        # TODO: keys should be structs containing Key and Opnode (as we need to know the entity (cls) and method to invoke for that particular key)
-        # the following method only works because we assume all the keys have the same entity and method
-        if self.dataflow is None:# or len(key_stack) == 0:
+        if self.dataflow is None:
             return EventResult(self._id, result)
         
         targets = self.dataflow.get_neighbors(self.target)
@@ -235,17 +234,26 @@ class Event():
         if len(targets) == 0:
             return EventResult(self._id, result)
         else:
-            # keys = key_stack.pop()
-            # if not isinstance(keys, list):
-            #     keys = [keys]
             
             collect_targets: list[Optional[CollectTarget]]
             # Events with SelectAllNodes need to be assigned a CollectTarget
             if isinstance(self.target, SelectAllNode):
+                assert select_all_keys
+                assert len(targets) == 1
+                n = len(select_all_keys)
                 collect_targets = [
-                    CollectTarget(self.target.collect_target, len(targets), i)
-                    for i in range(len(targets))
+                    CollectTarget(self.target.collect_target, n, i)
+                    for i in range(n)
                 ]
+                return [Event(
+                    targets[0],
+                    self.variable_map | {self.target.assign_key_to: key}, 
+                    self.dataflow,
+                    _id=self._id,
+                    collect_target=ct)
+                    
+                    for ct, key in zip(collect_targets, select_all_keys)]
+            
             elif isinstance(self.target, OpNode) and self.target.collect_target is not None:
                 collect_targets = [
                     self.target.collect_target for i in range(len(targets))
@@ -253,7 +261,7 @@ class Event():
             else:
                 collect_targets = [self.collect_target for i in range(len(targets))]
             
-            if isinstance(self.target, OpNode) and self.target.is_conditional:
+            if (isinstance(self.target, OpNode) or isinstance(self.target, StatelessOpNode)) and self.target.is_conditional:
                 # In this case there will be two targets depending on the condition
 
                 edges = self.dataflow.nodes[self.target.id].outgoing_edges

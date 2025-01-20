@@ -111,21 +111,20 @@ class FlinkStatelessOperator(ProcessFunction):
 
 
     def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
-        key_stack = event.key_stack
 
         # should be handled by filters on this FlinkOperator    
         assert(isinstance(event.target, StatelessOpNode)) 
 
         logger.debug(f"FlinkStatelessOperator {self.operator.dataflow.name}[{event._id}]: Processing: {event.target.method_type}")
         if isinstance(event.target.method_type, InvokeMethod):
-            result = self.operator.handle_invoke_method(event.target.method_type, variable_map=event.variable_map, key_stack=key_stack)  
+            result = self.operator.handle_invoke_method(event.target.method_type, variable_map=event.variable_map, key_stack=[])  
         else:
             raise Exception(f"A StatelessOperator cannot compute event type: {event.target.method_type}")
         
         if event.target.assign_result_to is not None:
             event.variable_map[event.target.assign_result_to] = result
 
-        new_events = event.propogate(key_stack, result)
+        new_events = event.propogate(result)
         if isinstance(new_events, EventResult):
             logger.debug(f"FlinkStatelessOperator {self.operator.dataflow.name}[{event._id}]: Returned {new_events}")
             yield new_events
@@ -157,11 +156,13 @@ class FlinkSelectAllOperator(KeyedProcessFunction):
             logger.debug(f"SelectAllOperator [{event.target.cls.__name__}]: Selecting all")
 
             # Yield all the keys we now about
-            event.key_stack.append(state)
+            # event.key_stack.append(state)
+            new_keys = state
             num_events = len(state)
             
             # Propogate the event to the next node
-            new_events = event.propogate(event.key_stack, None)
+            new_events = event.propogate(None, select_all_keys=new_keys)
+            print(len(new_events), num_events)
             assert num_events == len(new_events)
             
             logger.debug(f"SelectAllOperator [{event.target.cls.__name__}]: Propogated {num_events} events with target: {event.target.collect_target}")
@@ -173,7 +174,6 @@ class FlinkCollectOperator(KeyedProcessFunction):
     """Flink implementation of a merge operator."""
     def __init__(self): #, merge_node: MergeNode) -> None:
         self.collection: ValueState = None # type: ignore (expect state to be initialised on .open())
-        #self.node = merge_node
 
     def open(self, runtime_context: RuntimeContext):
         descriptor = ValueStateDescriptor("merge_state", Types.PICKLED_BYTE_ARRAY())
@@ -466,7 +466,7 @@ class FlinkRuntime():
        
         op_stream = (
             self.stateless_op_stream
-                .filter(lambda e: e.target.dataflow.name == flink_op.operator.dataflow.name)
+                .filter(lambda e: e.target.operator.dataflow.name == flink_op.operator.dataflow.name)
                 .process(flink_op)
                 .name("STATELESS DATAFLOW: " + flink_op.operator.dataflow.name)
             )
