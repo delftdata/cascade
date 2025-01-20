@@ -1,19 +1,37 @@
 from dataclasses import dataclass
+import abc
 
 from klara.core.nodes import Statement
 
-class Block:
+
+@dataclass
+class BaseBlock:
+    pass
+
+    @abc.abstractmethod
+    def set_next_block(self, block: "BaseBlock"):
+        pass
+
+
+@dataclass
+class Block(BaseBlock):
     statements: list[Statement]
-    next_block: "Block" = None
+    next_block: BaseBlock = None
+    
+    def set_next_block(self, block: BaseBlock):
+        self.next_block = block
 
-class IFBlock:
 
-    if_condition: Statement
-    body: list[Statement]
-    or_else: list[Statement]
-    next_block: "Block" = None
+@dataclass
+class IFBlock(BaseBlock):
+    test: Statement
+    body: BaseBlock
+    or_else: BaseBlock
 
-class ForLoop:
+    def set_next_block(self, block):
+        for b in [self.body, self.or_else]:
+            b.set_next_block(block)
+
+class ForLoop(BaseBlock):
     loop_condition: Statement
     body: list[Statement] 
-    next_block: "Block" = None

@@ -16,6 +16,7 @@ from cascade.frontend.generator.build_compiled_method_string import BuildCompile
 from cascade.frontend.ast_visitors import ExtractTypeVisitor
 from cascade.frontend.dataflow_analysis.split_control_flow import SplitControlFlow
 from cascade.frontend.generator.dataflow_linker import DataflowLinker
+from cascade.frontend.dataflow_analysis.cfg_builder import CFGBuiler
 
 def setup_cfg(code: str) -> Cfg:
         as_tree = AstBuilder().string_build(code)
@@ -60,6 +61,25 @@ def get_entity_names() -> str:
 
 
 def get_compiled_methods() -> str:
+    entities: list[str] = get_entity_names()
+    for cls in registered_classes:
+        compile_class(cls, entities)
+
+def compile_class(cls: ClassWrapper, entities: list[str]):
+    cls_desc: ClassDescriptor = cls.class_desc
+    for method_desc in cls_desc.methods_dec:
+        if method_desc.method_name == '__init__':
+            continue
+        compile_method(method_desc)
+
+def compile_method(method_desc: MethodDescriptor):
+    # second pass extract cfg.
+    cfg = CFGBuiler.build(method_desc.method_node.body)
+    # third pass create split functions of cfg blocks.
+    print(cfg)
+
+
+def get_compiled_methods_old() -> str:
     """Returns a list with the compiled methods as string"""
     compiled_methods: list[str] = []
     entities: list[str] = get_entity_names()
