@@ -43,7 +43,7 @@ class DataflowGraphBuilder:
         targets, values = variable_getter.targets, variable_getter.values
         statement.targets = targets
         statement.values = values
-        contains_attribute, attribute = ContainsAttributeVisitor.check_return_attribute(node)
+        contains_attribute, attribute = ContainsAttributeVisitor.check_and_return_attribute(node)
         if contains_attribute:
             if attribute.value.id != 'self':
                 # todo: Is only remote if the attribute is an entity. not if the attribute is dataclass0

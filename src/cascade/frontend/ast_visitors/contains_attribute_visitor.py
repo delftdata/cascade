@@ -10,7 +10,7 @@ class ContainsAttributeVisitor(AstVisitor):
     def visit_attribute(self, node: Attribute):
         assert self.contains_attribute == False, "Assuming only one attribute accesed per statement"
         self.contains_attribute = True
-        self.attribute = node
+        self.attribute: Attribute = node
     
     @classmethod
     def check(cls, node):
@@ -22,7 +22,7 @@ class ContainsAttributeVisitor(AstVisitor):
         return c.contains_attribute, id_
 
     @classmethod
-    def check_return_attribute(cls, node):
+    def check_and_return_attribute(cls, node):
         c = cls()
         c.visit(node)
         return c.contains_attribute, c.attribute

@@ -4,9 +4,10 @@ from klara.core import nodes
 
 from cascade.descriptors.method_descriptor import MethodDescriptor
 from cascade.frontend.dataflow_analysis.cfg_nodes import BaseBlock, Block, IFBlock
+from cascade.frontend.dataflow_analysis.control_flow_graph import ControlFlowGraph
 
 
-class CFGBuiler(AstVisitor):
+class CFGBuilder(AstVisitor):
 
     def __init__(self):
         self.blocks = []
@@ -30,8 +31,8 @@ class CFGBuiler(AstVisitor):
         """ Add if statement to cfg
         """
         self.create_block()
-        if_cfg_builder: CFGBuiler = CFGBuiler.build(nodes.body)
-        else_cfg_builder: CFGBuiler = CFGBuiler.build(nodes.orelse)
+        if_cfg_builder: CFGBuilder = CFGBuilder.build(nodes.body)
+        else_cfg_builder: CFGBuilder = CFGBuilder.build(nodes.orelse)
         if_block: IFBlock = IFBlock(nodes.test, if_cfg_builder.entry, else_cfg_builder.entry)
         self.add_block(if_block)
         self.blocks.extend(if_cfg_builder.blocks)
@@ -56,14 +57,19 @@ class CFGBuiler(AstVisitor):
             self.visit(s)
 
     @classmethod
-    def build(cls, statements: list[nodes.Statement], previous_block=None):
+    def build(cls, statements: list[nodes.Statement], previous_block=None) -> "CFGBuilder":
         builder = cls()
         if previous_block:
             builder.set_previous_block(previous_block)
         builder.visit_list(statements)
         builder.create_block()
         return builder
-
+    
+    @staticmethod
+    def build_cfg(statements: list[nodes.Statement]) -> ControlFlowGraph:
+        builder = CFGBuilder.build(statements)
+        assert builder.blocks and builder.entry, f"Control flow graph lacks an entry node ({builder.entry}), and/or blocks: {builder.blocks}"
+        return ControlFlowGraph(builder.blocks, builder.entry)
 
     def generic_visit(self, node):
         if isinstance(node, nodes.Statement):

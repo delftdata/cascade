@@ -16,7 +16,10 @@ from cascade.frontend.generator.build_compiled_method_string import BuildCompile
 from cascade.frontend.ast_visitors import ExtractTypeVisitor
 from cascade.frontend.dataflow_analysis.split_control_flow import SplitControlFlow
 from cascade.frontend.generator.dataflow_linker import DataflowLinker
-from cascade.frontend.dataflow_analysis.cfg_builder import CFGBuiler
+from cascade.frontend.dataflow_analysis.cfg_builder import CFGBuilder
+from cascade.frontend.dataflow_analysis.split_analyzer import SplitAnalyzer
+from cascade.frontend.dataflow_analysis.control_flow_graph import ControlFlowGraph
+from cascade.frontend.dataflow_analysis.split_stratagy import LinearSplitStratagy
 
 def setup_cfg(code: str) -> Cfg:
         as_tree = AstBuilder().string_build(code)
@@ -70,14 +73,14 @@ def compile_class(cls: ClassWrapper, entities: list[str]):
     for method_desc in cls_desc.methods_dec:
         if method_desc.method_name == '__init__':
             continue
-        compile_method(method_desc)
+        compile_method(method_desc, entities)
 
-def compile_method(method_desc: MethodDescriptor):
+def compile_method(method_desc: MethodDescriptor, entities: list[str]):
     # second pass extract cfg.
-    cfg = CFGBuiler.build(method_desc.method_node.body)
+    cfg: ControlFlowGraph = CFGBuilder.build_cfg(method_desc.method_node.body)
     # third pass create split functions of cfg blocks.
-    print(cfg)
-
+    split_analyzer: SplitAnalyzer = SplitAnalyzer(cfg, LinearSplitStratagy(entities))
+    split_analyzer.split()
 
 def get_compiled_methods_old() -> str:
     """Returns a list with the compiled methods as string"""
