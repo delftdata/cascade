@@ -10,3 +10,6 @@ class ControlFlowGraph:
 
     def incomming_edges(self, block: BaseBlock) -> list[BaseBlock]:
         return [b for b in self.blocks if block in b.get_next_blocks()]
+    
+    def remove_block(self, block: BaseBlock):
+        self.blocks.remove(block)

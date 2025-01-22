@@ -31,22 +31,24 @@ class SplitAnalyzer:
 
     def split_block(self, block: Block):
         """ Split block and than adjust edges for the cfg.
-            - Replaces "Block" with "SplitBlock" if remote method call is invoked.
+            - Replaces "Block" with "SplitBlock" if remote method call is invoked. 
             - Set next node of the splitblock.
             - Update previous links to block to point to new SplitBlock.
             - if block is the body/orelse branch of an IfBlock, then body, orelse respec.
             needs to be replaced with the first split.
         """
         continuation = block.statements
-        previous_block: BaseBlock = block
+        previous_blocks: list[BaseBlock] = self.cfg.incomming_edges(block)
         first_split: SplitBlock = None
         while self.split_stratagy.contains_remote_entity_invocation(continuation):
             split_block, continuation = self.split_stratagy.split(continuation)
             if not first_split:
-                first_split == split_block
-            previous_block.set_next_block(split_block)
-            previous_block = split_block
+                self.cfg.remove_block(block)
+                first_split = split_block
+            for b in previous_blocks:
+                b.set_next_block(split_block)
             self.new_blocks.append(split_block)
+            previous_block = split_block
         
         # The pressence of first split indicates that a split occured.
         if first_split:

@@ -76,10 +76,12 @@ def compile_class(cls: ClassWrapper, entities: list[str]):
         compile_method(method_desc, entities)
 
 def compile_method(method_desc: MethodDescriptor, entities: list[str]):
+    # Instance type map captures which instances are of which types entity type.
+    instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
     # second pass extract cfg.
     cfg: ControlFlowGraph = CFGBuilder.build_cfg(method_desc.method_node.body)
     # third pass create split functions of cfg blocks.
-    split_analyzer: SplitAnalyzer = SplitAnalyzer(cfg, LinearSplitStratagy(entities))
+    split_analyzer: SplitAnalyzer = SplitAnalyzer(cfg, LinearSplitStratagy(entities, instance_type_map))
     split_analyzer.split()
 
 def get_compiled_methods_old() -> str:

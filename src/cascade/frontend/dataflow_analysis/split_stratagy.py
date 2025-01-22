@@ -8,8 +8,9 @@ from cascade.frontend.ast_visitors import ContainsAttributeVisitor
 
 class SplitStratagy:
 
-    def __init__(self, entities: list[str]):
+    def __init__(self, entities: list[str], instane_type_map: dict[str, str]):
         self.entities: list[str] = entities
+        self.instance_type_map: dict[str, str] = instane_type_map # e.g.: {"item": "Item"}
         
     @abc.abstractmethod
     def split(self, statements: list[nodes.Statement])-> Tuple[SplitBlock, list[nodes.Statement]]:
@@ -20,14 +21,12 @@ class SplitStratagy:
         return any(self.statement_contains_remote_entity_invocation(s) for s in statments)
     
     def statement_contains_remote_entity_invocation(self, s: nodes.Statement):
-        """Returns True of one of the nodes values contains an remote function invocatinon."""
+        """Returns True of one of the nodes values contains an remote function invocatinon.
+        """
         contains_attribute, attribute = ContainsAttributeVisitor.check_and_return_attribute(s)
-        # TODO this method should use variable type map of method...
-        # attributes are in type e.g. item_1. 
-        # variable type map should consist all variables and types.
-        # And dan see if the type of the attribute is a Remote entity...
-        if contains_attribute:
-            return attribute in self.entities
+        if contains_attribute and attribute.value.id in self.instance_type_map:
+            attribute_type = self.instance_type_map[attribute.value.id]
+            return attribute_type in self.entities
         return False
 
 

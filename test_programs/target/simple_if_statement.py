@@ -24,7 +24,7 @@ class Item:
     def get_price(self):
         return self.item_price
 
-
+@cascade.cascade
 class DeliveryService:
 
     def get_delivery_costs(self):
