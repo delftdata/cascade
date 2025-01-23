@@ -21,6 +21,9 @@ class InvokeMethod:
     """A method invocation of the underlying method indentifier."""
     method_name: str
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}('{self.method_name}')"
+
 @dataclass
 class Filter:
     """Filter by this function"""
@@ -105,6 +108,9 @@ class OpNode(Node):
                     collect_target=ct)
                     
                     for target, ct in zip(targets, collect_targets)]
+    
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.entity.__name__}, {self.method_type})"
 
 @dataclass
 class StatelessOpNode(Node):
@@ -237,13 +243,81 @@ class DataFlow:
         """Add an edge to the Dataflow graph. Nodes that don't exist will be added to the graph automatically."""
         self.add_node(edge.from_node)
         self.add_node(edge.to_node)
-        self.adjacency_list[edge.from_node.id].append(edge.to_node.id)
-        edge.from_node.outgoing_edges.append(edge)
+        if edge.to_node.id not in self.adjacency_list[edge.from_node.id]:
+            self.adjacency_list[edge.from_node.id].append(edge.to_node.id)
+            edge.from_node.outgoing_edges.append(edge)
+
+    
+    def remove_edge(self, from_node: Node, to_node: Node):
+        """Remove an edge from the Dataflow graph."""
+        if from_node.id in self.adjacency_list and to_node.id in self.adjacency_list[from_node.id]:
+            # Remove from adjacency list
+            self.adjacency_list[from_node.id].remove(to_node.id)
+            # Remove from outgoing_edges
+            from_node.outgoing_edges = [
+                edge for edge in from_node.outgoing_edges if edge.to_node.id != to_node.id
+            ]
+
+    def remove_node(self, node: Node):
+        """Remove a node from the DataFlow graph and reconnect its parents to its children."""
+        if node.id not in self.nodes:
+            return  # Node doesn't exist in the graph
+
+
+        if isinstance(node, OpNode) or isinstance(node, StatelessOpNode):
+            assert not node.is_conditional, "there's no clear way to remove a conditional node"
+            assert not node.assign_result_to, "can't delete node whose result is used"
+            assert not node.collect_target, "can't delete node which has a collect_target"
+
+        # Find parents (nodes that have edges pointing to this node)
+        parents = [parent_id for parent_id, children in self.adjacency_list.items() if node.id in children]
+
+        # Find children (nodes that this node points to)
+        children = self.adjacency_list[node.id]
+
+        # Connect each parent to each child
+        for parent_id in parents:
+            parent_node = self.nodes[parent_id]
+            for child_id in children:
+                child_node = self.nodes[child_id]
+                new_edge = Edge(parent_node, child_node)
+                self.add_edge(new_edge)
+
+        # Remove edges from parents to the node
+        for parent_id in parents:
+            parent_node = self.nodes[parent_id]
+            self.remove_edge(parent_node, node)
+
+        # Remove outgoing edges from the node
+        for child_id in children:
+            child_node = self.nodes[child_id]
+            self.remove_edge(node, child_node)
+
+        # Remove the node from the adjacency list and nodes dictionary
+        del self.adjacency_list[node.id]
+        del self.nodes[node.id]
+
 
     def get_neighbors(self, node: Node) -> List[Node]:
         """Get the outgoing neighbors of this `Node`"""
         return [self.nodes[id] for id in self.adjacency_list.get(node.id, [])]
 
+    def to_dot(self) -> str:
+        """Output the DataFlow graph in DOT (Graphviz) format."""
+        lines = [f"digraph {self.name} {{"]
+
+        # Add nodes
+        for node in self.nodes.values():
+            lines.append(f'    {node.id} [label="{node}"];')
+
+        # Add edges
+        for from_id, to_ids in self.adjacency_list.items():
+            for to_id in to_ids:
+                lines.append(f"    {from_id} -> {to_id};")
+
+        lines.append("}")
+        return "\n".join(lines)
+    
 class Result(ABC):
     pass
 

@@ -59,7 +59,7 @@ def test_deathstar_demo_python():
     print("Populating, press enter to go to the next step when done")
     ds.populate()
 
-    time.sleep(2)
+    time.sleep(0.1)
 
     client = PythonClientSync(ds.runtime)
     print("testing user login")
