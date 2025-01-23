@@ -7,19 +7,15 @@ from klara.core.cfg import Cfg
 
 
 from cascade.wrappers import ClassWrapper
-from cascade.descriptors import ClassDescriptor, MethodDescriptor
+from cascade.descriptors import ClassDescriptor
 from cascade.frontend.generator.generate_split_functions import GenerateSplitFunctions
 from cascade.frontend.generator.generate_dataflow import GenerateDataflow
-from cascade.dataflow.dataflow import DataFlow, OpNode, InvokeMethod
-from cascade.frontend.intermediate_representation import StatementDataflowGraph
+from cascade.dataflow.dataflow import OpNode, InvokeMethod
 from cascade.frontend.generator.build_compiled_method_string import BuildCompiledMethodsString
 from cascade.frontend.ast_visitors import ExtractTypeVisitor
 from cascade.frontend.dataflow_analysis.split_control_flow import SplitControlFlow
 from cascade.frontend.generator.dataflow_linker import DataflowLinker
-from cascade.frontend.dataflow_analysis.cfg_builder import CFGBuilder
-from cascade.frontend.dataflow_analysis.split_analyzer import SplitAnalyzer
-from cascade.frontend.dataflow_analysis.control_flow_graph import ControlFlowGraph
-from cascade.frontend.dataflow_analysis.split_stratagy import LinearSplitStratagy
+from cascade.frontend.compiler import Compiler
 
 def setup_cfg(code: str) -> Cfg:
         as_tree = AstBuilder().string_build(code)
@@ -64,25 +60,7 @@ def get_entity_names() -> str:
 
 
 def get_compiled_methods() -> str:
-    entities: list[str] = get_entity_names()
-    for cls in registered_classes:
-        compile_class(cls, entities)
-
-def compile_class(cls: ClassWrapper, entities: list[str]):
-    cls_desc: ClassDescriptor = cls.class_desc
-    for method_desc in cls_desc.methods_dec:
-        if method_desc.method_name == '__init__':
-            continue
-        compile_method(method_desc, entities)
-
-def compile_method(method_desc: MethodDescriptor, entities: list[str]):
-    # Instance type map captures which instances are of which types entity type.
-    instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
-    # second pass extract cfg.
-    cfg: ControlFlowGraph = CFGBuilder.build_cfg(method_desc.method_node.body)
-    # third pass create split functions of cfg blocks.
-    split_analyzer: SplitAnalyzer = SplitAnalyzer(cfg, LinearSplitStratagy(entities, instance_type_map))
-    split_analyzer.split()
+    Compiler.compile(registered_classes)
 
 def get_compiled_methods_old() -> str:
     """Returns a list with the compiled methods as string"""
