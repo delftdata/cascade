@@ -53,7 +53,6 @@ class SplitFunctionBuilder(CFGVisitor):
     def add_new_function(self, statements: list[nodes.Statement], args, method_name: str):
         """ Build new function and add to function list.
         """
-        function_def: ast.FunctionDef = ast.FunctionDef(method_name, args, statements, [])
         new_function = nodes.FunctionDef()
         new_function.postinit(
             method_name,
@@ -65,18 +64,25 @@ class SplitFunctionBuilder(CFGVisitor):
     
     @staticmethod
     def get_function_args():
-        args: list[ast.arg] = ast.arguments([], [ast.arg('variable_map'), ast.arg('state'), ast.arg('key_stack')], [], [])
-        return SplitFunctionBuilder.to_klara(args)
-
+        arg_list: list[nodes.Arg] = SplitFunctionBuilder.arg_list()
+        args: nodes.Arguments = nodes.Arguments()
+        args.postinit([], arg_list, [], [], [], [])
+        return args
+    
     @staticmethod
-    def to_klara(ast_node):
-        mod_node = nodes.Module(name="", path="")
-        as_tree = TreeRewriter().visit(ast_node, None)
-        cfg = Cfg(as_tree)
-        cfg.convert_to_ssa()
-        return cfg
-        
-
+    def arg_list():
+        arg_list: list[str] = ['variable_map', 'state', 'key_stack']
+        return [SplitFunctionBuilder.to_klara_arg(a) for a in arg_list]
+    
+    @staticmethod
+    def to_klara_arg(arg_name: str):
+        arg: nodes.Arg = nodes.Arg()
+        arg.postinit(
+            arg_name,
+            None
+        )
+        return  arg
+    
     @staticmethod
     def extract_variables_from_statment_list(statements: list[nodes.Statement]):
         """
