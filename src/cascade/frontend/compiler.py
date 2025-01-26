@@ -5,6 +5,7 @@ from cascade.frontend.dataflow_analysis.control_flow_graph import ControlFlowGra
 from cascade.frontend.dataflow_analysis.cfg_builder import CFGBuilder
 from cascade.frontend.dataflow_analysis.split_analyzer import SplitAnalyzer
 from cascade.frontend.dataflow_analysis.split_stratagy import LinearSplitStratagy
+from cascade.frontend.dataflow_analysis.split_function_builder import SplitFunctionBuilder
 
 class Compiler:
 
@@ -39,7 +40,9 @@ class Compiler:
         # pass 4: Create split functions from control flow graph.
         # Keep the code in ast form (do not convert to string) and add the remote function 
         # invocations to the function bodies.
-
+        split_builder: SplitFunctionBuilder = SplitFunctionBuilder(cfg, method_desc.method_name)
+        split_builder.build_split_functions()
+        split_builder.functions
         # pass 5: Create dataflow graph.
 
     def get_entity_names(self) -> str:

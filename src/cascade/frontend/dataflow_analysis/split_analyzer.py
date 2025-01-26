@@ -2,10 +2,11 @@
 from cascade.frontend.dataflow_analysis.control_flow_graph import ControlFlowGraph
 from cascade.frontend.dataflow_analysis.cfg_nodes import BaseBlock, Block, IFBlock, SplitBlock
 from cascade.frontend.dataflow_analysis.split_stratagy import SplitStratagy
-from cascade.dataflow.dataflow import DataFlow, Edge, OpNode, InvokeMethod
+from cascade.frontend.dataflow_analysis.cfg_visiter import CFGVisitor
 
 
-class SplitAnalyzer:
+
+class SplitAnalyzer(CFGVisitor):
     """ Splits blocks of CFG
     """
 
@@ -15,21 +16,15 @@ class SplitAnalyzer:
         self.new_blocks: list[BaseBlock] = []
     
     def split(self):
-        for block in self.cfg.blocks:
-            self.split_generic_block(block)
+        self.visit_blocks(self.cfg.blocks)
         self.add_new_blocks_to_cfg()
-        
-    def split_generic_block(self, block: BaseBlock):
-        method = "split_" + block.__class__.__name__.lower()
-        visitor = getattr(self, method, self.generic_split)
-        visitor(block)
-    
-    def split_ifblock(self, block: IFBlock):
-        block.test
-        self.split_generic_block(block.body)
-        self.split_generic_block(block.or_else)
 
-    def split_block(self, block: Block):
+    def visit_ifblock(self, block: IFBlock):
+        block.test
+        self.visit_generic_block(block.body)
+        self.visit_generic_block(block.or_else)
+
+    def visit_block(self, block: Block):
         """ Split block and than adjust edges for the cfg.
             - Replaces "Block" with "SplitBlock" if remote method call is invoked. 
             - Set next node of the splitblock.
@@ -63,6 +58,3 @@ class SplitAnalyzer:
     
     def add_new_blocks_to_cfg(self):
         self.cfg.blocks.extend(self.new_blocks)
-    
-    def generic_split(self, block):
-        raise NotImplementedError()
