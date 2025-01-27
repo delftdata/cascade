@@ -6,6 +6,7 @@ from cascade.frontend.dataflow_analysis.cfg_builder import CFGBuilder
 from cascade.frontend.dataflow_analysis.split_analyzer import SplitAnalyzer
 from cascade.frontend.dataflow_analysis.split_stratagy import LinearSplitStratagy
 from cascade.frontend.dataflow_analysis.split_function_builder import SplitFunctionBuilder
+from cascade.frontend.dataflow_analysis.ssa_converter import SSAConverter
 
 class Compiler:
 
@@ -30,6 +31,9 @@ class Compiler:
             [2] Create control flow graph.
             [3] Split blocks with given split stratagy.
         """
+        # Convert to SSA
+        converter = SSAConverter(method_desc.method_node)
+        ssa_ast = converter.convert()
         # Instance type map captures which instances are of which types entity type.
         instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
         # pass 2: create cfg.

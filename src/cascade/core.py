@@ -1,5 +1,6 @@
 from inspect import isclass, getsource, getfile
 from typing import Dict
+import ast
 
 from klara.core import nodes
 from klara.core.tree_rewriter import AstBuilder
@@ -16,15 +17,14 @@ from cascade.frontend.ast_visitors import ExtractTypeVisitor
 from cascade.frontend.dataflow_analysis.split_control_flow import SplitControlFlow
 from cascade.frontend.generator.dataflow_linker import DataflowLinker
 from cascade.frontend.compiler import Compiler
+from cascade.frontend.dataflow_analysis.ssa_converter import SSAConverter
 
 def setup_cfg(code: str) -> Cfg:
-        as_tree = AstBuilder().string_build(code)
-        cfg = Cfg(as_tree)
-        cfg.convert_to_ssa()
-        return cfg, as_tree
+    ast_module = ast.parse(code)
+    return ast_module
 
 
-parse_cache: Dict[str, nodes.Module] = {}
+parse_cache: Dict[str, ast.Module] = {}
 
 registered_classes: list[ClassWrapper] = []
 
@@ -40,16 +40,16 @@ def cascade(cls, parse_file=True):
             with open(class_file_name, "r") as file:
                 to_parse_file = file.read()
                 # parsed_cls = AstBuilder().string_build(to_parse_file)
-                parsed_cls, tree = setup_cfg(to_parse_file)
-                parse_cache[class_file_name] = (parsed_cls, tree)
+                parsed_cls = setup_cfg(to_parse_file)
+                parse_cache[class_file_name] = parsed_cls
         else:
-            parsed_cls, tree = parse_cache[class_file_name]
+            parsed_cls = parse_cache[class_file_name]
     else:
         class_source = getsource(cls)
-        parsed_cls, tree = setup_cfg(class_source)
+        parsed_cls = setup_cfg(class_source)
 
     # Create class descripter for class
-    class_desc: ClassDescriptor = ClassDescriptor.from_module(cls.__name__, tree)
+    class_desc: ClassDescriptor = ClassDescriptor.from_module(cls.__name__, parsed_cls)
     class_wrapper: ClassWrapper = ClassWrapper(cls, class_desc)
     registered_classes.append(class_wrapper)
 
@@ -61,6 +61,7 @@ def get_entity_names() -> str:
 
 def get_compiled_methods() -> str:
     Compiler.compile(registered_classes)
+
 
 def get_compiled_methods_old() -> str:
     """Returns a list with the compiled methods as string"""

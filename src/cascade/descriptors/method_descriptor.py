@@ -1,7 +1,4 @@
-from klara.core import nodes
-
-from cascade.frontend.dataflow_analysis.dataflow_graph_builder import DataflowGraphBuilder
-from cascade.frontend.intermediate_representation import StatementDataflowGraph
+import ast
 
 
 class MethodDescriptor:
@@ -10,7 +7,7 @@ class MethodDescriptor:
     def __init__(
             self,
             method_name: str,
-            method_node: nodes.FunctionDef,
+            method_node: ast.FunctionDef,
     ):
         self.method_name: str = method_name
-        self.method_node: nodes.FunctionDef = method_node
+        self.method_node: ast.FunctionDef = method_node

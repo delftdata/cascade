@@ -1,15 +1,15 @@
-from klara.core.ssa_visitors import AstVisitor
-from klara.core.nodes import FunctionDef 
+import ast 
+
 
 from cascade.descriptors.method_descriptor import MethodDescriptor
 
 
-class ExtractMethodVisitor(AstVisitor):
+class ExtractMethodVisitor(ast.NodeVisitor):
 
     def __init__(self):
         self.methods: dict[str, MethodDescriptor] = {}
     
-    def visit_functiondef(self, node: FunctionDef):
+    def visit_FunctionDef(self, node: ast.FunctionDef):
         name: str = str(node.name)
         assert name not in self.methods, "A method should be only defined once"
         descriptor: MethodDescriptor = MethodDescriptor(name, node)

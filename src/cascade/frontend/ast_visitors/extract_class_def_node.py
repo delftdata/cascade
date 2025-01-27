@@ -1,14 +1,15 @@
 from klara.core.ssa_visitors import AstVisitor
 from klara.core import nodes
 
-class ExtractClassDefNode(AstVisitor):
+import ast
 
+class ExtractClassDefNode(ast.NodeVisitor):
 
     def __init__(self, target_class_name: str):
         self.target_class_name: str = target_class_name
-        self.class_def: nodes.ClassDef = None
+        self.class_def: ast.ClassDef = None
     
-    def visit_classdef(self, node: nodes.ClassDef):
+    def visit_ClassDef(self, node: ast.ClassDef):
         if node.name == self.target_class_name:
             self.class_def = node
     

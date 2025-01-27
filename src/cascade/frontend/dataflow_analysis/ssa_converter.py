@@ -11,13 +11,16 @@ from klara.core.node_classes import BUILT_IN_TYPE, BUILT_IN_TYPE_MAP
 
 class SSAConverter(AstVisitor):
     
-    def __init__(self, ast_module: ast.Module):
-        self.as_tree = TreeRewriter().visit_module(ast_module, name="")
+    def __init__(self, f_def: ast.FunctionDef):
+        m = ast.Module([f_def])
+        self.as_tree = TreeRewriter().visit_module(m)
     
     def convert(self):
         cfg = Cfg(self.as_tree)
         cfg.convert_to_ssa()
-        return self.visit(cfg.as_tree)
+        m = self.visit(cfg.as_tree)
+        f_def, = m.body
+        return f_def
     
     def fields_to_attr_map(self, node):
         fields = node._fields
