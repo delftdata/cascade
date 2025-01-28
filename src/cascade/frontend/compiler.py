@@ -34,6 +34,7 @@ class Compiler:
         # Convert to SSA
         converter = SSAConverter(method_desc.method_node)
         ssa_ast = converter.convert()
+        method_desc.set_method_node(ssa_ast)
         # Instance type map captures which instances are of which types entity type.
         instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
         # pass 2: create cfg.

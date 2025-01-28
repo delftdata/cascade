@@ -1,21 +1,18 @@
+import ast
 
-from klara.core.ssa_visitors import AstVisitor
-from klara.core import nodes
-
-from cascade.descriptors.method_descriptor import MethodDescriptor
 from cascade.frontend.dataflow_analysis.cfg_nodes import BaseBlock, Block, IFBlock
 from cascade.frontend.dataflow_analysis.control_flow_graph import ControlFlowGraph
 
 
-class CFGBuilder(AstVisitor):
+class CFGBuilder(ast.NodeVisitor):
 
     def __init__(self):
         self.blocks = []
-        self.statments: list[nodes.Statement] = []
+        self.statments: list[ast.stmt] = []
         self.previous_block: BaseBlock = None
         self.entry: BaseBlock = None
 
-    def visit_statement(self, node: nodes.Statement):
+    def visit_statement(self, node: ast.stmt):
         """ Add statement to cfg
         """
         self.statments.append(node)
@@ -27,13 +24,13 @@ class CFGBuilder(AstVisitor):
         self.add_block(block)
         self.statments = []
     
-    def visit_if(self, nodes: nodes.If):
+    def visit_If(self, node: ast.If):
         """ Add if statement to cfg
         """
         self.create_block()
-        if_cfg_builder: CFGBuilder = CFGBuilder.build(nodes.body)
-        else_cfg_builder: CFGBuilder = CFGBuilder.build(nodes.orelse)
-        if_block: IFBlock = IFBlock(nodes.test, if_cfg_builder.entry, else_cfg_builder.entry)
+        if_cfg_builder: CFGBuilder = CFGBuilder.build(node.body)
+        else_cfg_builder: CFGBuilder = CFGBuilder.build(node.orelse)
+        if_block: IFBlock = IFBlock(node.test, if_cfg_builder.entry, else_cfg_builder.entry)
         self.add_block(if_block)
         self.blocks.extend(if_cfg_builder.blocks)
         self.blocks.extend(else_cfg_builder.blocks)
@@ -57,7 +54,7 @@ class CFGBuilder(AstVisitor):
             self.visit(s)
 
     @classmethod
-    def build(cls, statements: list[nodes.Statement], previous_block=None) -> "CFGBuilder":
+    def build(cls, statements: list[ast.stmt], previous_block=None) -> "CFGBuilder":
         builder = cls()
         if previous_block:
             builder.set_previous_block(previous_block)
@@ -66,12 +63,12 @@ class CFGBuilder(AstVisitor):
         return builder
     
     @staticmethod
-    def build_cfg(statements: list[nodes.Statement]) -> ControlFlowGraph:
+    def build_cfg(statements: list[ast.stmt]) -> ControlFlowGraph:
         builder = CFGBuilder.build(statements)
         assert builder.blocks and builder.entry, f"Control flow graph lacks an entry node ({builder.entry}), and/or blocks: {builder.blocks}"
         return ControlFlowGraph(builder.blocks, builder.entry)
 
     def generic_visit(self, node):
-        if isinstance(node, nodes.Statement):
+        if isinstance(node, ast.stmt):
             self.visit_statement(node)
         super().generic_visit(node)

@@ -1,16 +1,15 @@
-from klara.core.ssa_visitors import AstVisitor
-from klara.core.nodes import Attribute
+import ast
 
-class ContainsAttributeVisitor(AstVisitor):
+class ContainsAttributeVisitor(ast.NodeVisitor):
 
     def __init__(self):
         self.contains_attribute: bool = False
         self.attribute = None
     
-    def visit_attribute(self, node: Attribute):
+    def visit_Attribute(self, node: ast.Attribute):
         assert self.contains_attribute == False, "Assuming only one attribute accesed per statement"
         self.contains_attribute = True
-        self.attribute: Attribute = node
+        self.attribute: ast.Attribute = node
     
     @classmethod
     def check(cls, node):

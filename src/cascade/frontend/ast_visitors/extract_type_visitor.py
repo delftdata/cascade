@@ -1,9 +1,7 @@
-from klara.core.ssa_visitors import AstVisitor
-from klara.core.nodes import AnnAssign, Arg
-from klara.core import nodes
+import ast
 
 
-class ExtractTypeVisitor(AstVisitor):
+class ExtractTypeVisitor(ast.NodeVisitor):
 
     def __init__(self):
         """ The type map keeps track of variable types for methods.
@@ -11,19 +9,19 @@ class ExtractTypeVisitor(AstVisitor):
         """
         self.type_map: dict[str, str] = {}
 
-    def visit_annassign(self, node: AnnAssign):
+    def visit_AnnAssign(self, node: ast.AnnAssign):
         target =  node.target
-        if type(target) == nodes.AssignAttribute:
+        if type(target) == ast.AssignAttribute:
             id: str = target.attr
         else:
             id: str = str(target.id)
         type_: str = str(node.annotation.id)
         self.type_map[id] = type_
     
-    def visit_arg(self, arg: Arg):
+    def visit_arg(self, arg: ast.arg):
         annotation = arg.annotation
         var_type = type(annotation)
-        if var_type == nodes.Const:
+        if var_type == ast.Constant:
             id: str = arg.arg
             self.type_map[id] = annotation.value
         elif annotation != None:

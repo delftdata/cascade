@@ -1,5 +1,9 @@
-import ast 
+import ast
 import sys
+
+from cascade.frontend.ast_ import SSAName 
+
+
 
 from klara.core.ssa_visitors import AstVisitor
 from klara.core import nodes
@@ -38,8 +42,7 @@ class SSAConverter(AstVisitor):
                 class_object = ast.Constant
             case nodes.AssignName:
                 attrs = self.fields_to_attr_map(node)
-                id_: str = repr(node)
-                return ast.Name(id_, ctx=attrs['ctx'])
+                return ast.Name(node.id, version=node.version, ctx=attrs['ctx'])
             case nodes.Store:
                 class_object = ast.Store
             case nodes.Bool:
@@ -48,8 +51,7 @@ class SSAConverter(AstVisitor):
                 class_object = ast.Assign
             case nodes.Name:        
                 attrs = self.fields_to_attr_map(node)
-                id_: str = repr(node)
-                return ast.Name(id_, ctx=attrs['ctx'])
+                return SSAName(node.id, version=node.version, ctx=attrs['ctx'])
             case _:
                 class_name: str = node.__class__.__name__
                 if class_name in BUILT_IN_TYPE_MAP:

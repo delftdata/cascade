@@ -11,3 +11,6 @@ class MethodDescriptor:
     ):
         self.method_name: str = method_name
         self.method_node: ast.FunctionDef = method_node
+    
+    def set_method_node(self, method_node: ast.FunctionDef):
+        self.method_node = method_node
