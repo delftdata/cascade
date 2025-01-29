@@ -7,9 +7,6 @@ from cascade.frontend.dataflow_analysis.cfg_visiter import CFGVisitor
 from cascade.frontend.ast_visitors import ContainsAttributeVisitor
 
 
-#TODO: add arguments to split functions...
-
-
 KEY_STACK: str = 'key_stack'
 VARIABLE_MAP: str = 'variable_map'
 
@@ -31,18 +28,17 @@ class SplitFunctionBuilder(CFGVisitor):
     def visit_block(self, block: Block):
         """ Put the blocks statements into a function.
         """
-        args = self.get_function_args()
-        self.add_new_function(block.statements, args, f'{self.method_name}_{next(self.counter)}')
+        self.add_new_function(block.statements, f'{self.method_name}_{next(self.counter)}')
     
     def visit_ifblock(self, block: IFBlock):
         if_cond_num: int = next(self.if_cond_counter)
-        self.add_new_function([ast.Return(block.test)], [], f'{self.method_name}_if_cond_{if_cond_num}')
+        self.add_new_function([ast.Return(block.test)], f'{self.method_name}_if_cond_{if_cond_num}')
     
     def visit_splitblock(self, block: SplitBlock):
         """ Add split block to function. Add remote function calls to key stack
         """
         key_stack_call: ast.Expr = self.transform_remote_call_to_callstack(block.remote_function_calls)
-        self.add_new_function(block.statements + [key_stack_call], [], f'{self.method_name}_split_{next(self.split_counter)}')
+        self.add_new_function(block.statements + [key_stack_call], f'{self.method_name}_split_{next(self.split_counter)}')
     
     def transform_remote_call_to_callstack(self, remote_calls: list[ast.stmt]) -> ast.Expr:
         """ Transforms a remote entity invocation. Appends right key to callstack.
@@ -70,9 +66,10 @@ class SplitFunctionBuilder(CFGVisitor):
         else: 
             assert False, 'Invoking remote methods in parallel is not supported yet.'
 
-    def add_new_function(self, statements: list[ast.stmt], args, method_name: str):
+    def add_new_function(self, statements: list[ast.stmt], method_name: str):
         """ Build new function and add to function list.
         """
+        args = self.get_function_args()
         new_function = ast.FunctionDef(
             method_name,
             args,
@@ -84,6 +81,10 @@ class SplitFunctionBuilder(CFGVisitor):
     
     @staticmethod
     def get_function_args() -> ast.arguments:
+        """ Returns functions args.
+            The arguments are the same for every split functions. 
+            i.e.: (variable_map, state, key_stack)
+        """
         arg_list: list[ast.Arg] = SplitFunctionBuilder.arg_list()
         return ast.arguments(posonlyargs=[], args=arg_list, kwonlyargs=[], defaults=[])
     
