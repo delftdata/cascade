@@ -51,11 +51,15 @@ class Compiler:
         # invocations to the function bodies.
         split_builder: SplitFunctionBuilder = SplitFunctionBuilder(cfg, method_desc.method_name)
         split_builder.build_split_functions()
+        # pass 5: Create dataflow graph.
+        self.print_split_functions(split_builder.functions)
+
+
+    def print_split_functions(self, functions):
         res = ''
-        for f in split_builder.functions:
+        for f in functions:
             s = unparse(f)
             res += s + '\n\n'
-        # pass 5: Create dataflow graph.
         print(res)
 
     def get_entity_names(self) -> str:

@@ -4,13 +4,7 @@ from cascade.frontend.dataflow_analysis.control_flow_graph import ControlFlowGra
 
 class CFGVisitor:
 
-
-    def visit_blocks(self, blocks):
-        for block in blocks:
-                self.visit(block)
-    
     def breadth_first_walk(self, cfg: ControlFlowGraph):
-         self.visit(cfg.entry)
          queue = [cfg.entry]
          visited = []
          while queue:
@@ -18,7 +12,7 @@ class CFGVisitor:
             if q in visited:
                 continue
 
-            self.visit(q)
+            self._visit(q)
 
             # add q to visited nodes.
             visited.append(q)
@@ -28,7 +22,7 @@ class CFGVisitor:
                  if b != None and b not in visited:
                     queue.append(b)
 
-    def visit(self, block: BaseBlock):
+    def _visit(self, block: BaseBlock):
         """ Visit all blocks fron the cfg with  breath first walk
         """
         method = "visit_" + block.__class__.__name__.lower()

@@ -4,10 +4,14 @@ import ast
 from cascade.frontend.dataflow_analysis.control_flow_graph import ControlFlowGraph
 from cascade.frontend.dataflow_analysis.cfg_nodes import BaseBlock, Block, SplitBlock, IFBlock
 from cascade.frontend.dataflow_analysis.cfg_visiter import CFGVisitor
+from cascade.frontend.ast_visitors import ContainsAttributeVisitor
 
 
 #TODO: add arguments to split functions...
 
+
+KEY_STACK: str = 'key_stack'
+VARIABLE_MAP: str = 'variable_map'
 
 class SplitFunctionBuilder(CFGVisitor):
     """ Takes a "ControlFlowGraph" and build split functions.
@@ -37,14 +41,34 @@ class SplitFunctionBuilder(CFGVisitor):
     def visit_splitblock(self, block: SplitBlock):
         """ Add split block to function. Add remote function calls to key stack
         """
-        key_stack_call: ast.Statement = self.transform_remote_call_to_callstack(block.remote_function_calls)
-        if block.statements:
-            self.add_new_function(block.statements + [key_stack_call], [], f'{self.method_name}_split_{next(self.split_counter)}')
+        key_stack_call: ast.Expr = self.transform_remote_call_to_callstack(block.remote_function_calls)
+        self.add_new_function(block.statements + [key_stack_call], [], f'{self.method_name}_split_{next(self.split_counter)}')
     
-    def transform_remote_call_to_callstack(self, remote_calls: list[ast.stmt]):
+    def transform_remote_call_to_callstack(self, remote_calls: list[ast.stmt]) -> ast.Expr:
         """ Transforms a remote entity invocation. Appends right key to callstack.
+            returns ast of: 'key_stack.append(variable_map['{remote_call_key}'])'
         """
-        return ast.stmt()
+        if len(remote_calls) == 1:
+            call, = remote_calls
+            contains_attribute, attribute = ContainsAttributeVisitor.check_and_return_attribute(call)
+            assert contains_attribute, "Remote function call should contain an attribute"   
+            value = attribute.value
+            remote_call_key: str = f'{value.id}_{value.version}' if hasattr(value, 'version') else value.id
+            remote_call_key += '_key'
+            return  ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id=KEY_STACK, ctx=ast.Load()),
+                        attr='append',
+                        ctx=ast.Load()),
+                    args=[
+                        ast.Subscript(
+                            value=ast.Name(id=VARIABLE_MAP, ctx=ast.Load()),
+                            slice=ast.Constant(value=remote_call_key),
+                            ctx=ast.Load())],
+                    keywords=[]))
+        else: 
+            assert False, 'Invoking remote methods in parallel is not supported yet.'
 
     def add_new_function(self, statements: list[ast.stmt], args, method_name: str):
         """ Build new function and add to function list.
