@@ -5,10 +5,13 @@ from cascade.frontend.dataflow_analysis.control_flow_graph import ControlFlowGra
 from cascade.frontend.dataflow_analysis.cfg_nodes import BaseBlock, Block, SplitBlock, IFBlock
 from cascade.frontend.dataflow_analysis.cfg_visiter import CFGVisitor
 from cascade.frontend.ast_visitors import ContainsAttributeVisitor
+from cascade.frontend.ast_visitors import VariableGetter
 
 
 KEY_STACK: str = 'key_stack'
 VARIABLE_MAP: str = 'variable_map'
+STATE: str = 'state'
+ARG_LIST: list[str] = [VARIABLE_MAP, STATE, KEY_STACK]
 
 class SplitFunctionBuilder(CFGVisitor):
     """ Takes a "ControlFlowGraph" and build split functions.
@@ -69,6 +72,7 @@ class SplitFunctionBuilder(CFGVisitor):
     def add_new_function(self, statements: list[ast.stmt], method_name: str):
         """ Build new function and add to function list.
         """
+        statements = self.extract_variables_from_statment_list(statements)
         args = self.get_function_args()
         new_function = ast.FunctionDef(
             method_name,
@@ -90,11 +94,35 @@ class SplitFunctionBuilder(CFGVisitor):
     
     @staticmethod
     def arg_list():
-        arg_list: list[str] = ['variable_map', 'state', 'key_stack']
-        return [ast.arg(a) for a in arg_list]
+        return [ast.arg(a) for a in ARG_LIST]
     
     @staticmethod
     def extract_variables_from_statment_list(statements: list[ast.stmt]):
         """
         """
+        values = []
+        for v in statements:
+            var_getter: VariableGetter = VariableGetter.get_variable(v)
+            values.extend(var_getter.values)
+
+        # String in arg list are reserved for arg list.
+        ignore_values = ARG_LIST + ['self']
+        values = [v for v in values if v.id not in ignore_values]
+        return SplitFunctionBuilder.build_anssign_var_from_values(values) + statements
+
+    @staticmethod
+    def build_anssign_var_from_values(values: list[ast.Name]):
+        return [SplitFunctionBuilder.value_to_assign(v) for v in values]
+
+    @staticmethod
+    def value_to_assign(value: ast.Name):
+        id_ = f'{value.id}_{value.version}' if hasattr(value, 'version') else value.id
+        return ast.Assign(
+            targets=[
+                ast.Name(id=id_, ctx=ast.Store())],
+            value=ast.Subscript(
+                value=ast.Name(id=VARIABLE_MAP, ctx=ast.Load()),
+                slice=ast.Constant(value=id_),
+                ctx=ast.Load()))
+        
 

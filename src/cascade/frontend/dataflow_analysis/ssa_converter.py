@@ -77,7 +77,7 @@ class SSAConverter(AstVisitor):
                 class_object = ast.Constant
             case nodes.AssignName:
                 attrs = self.fields_to_attr_map(node)
-                return ast.Name(node.id, version=node.version, ctx=attrs['ctx'])
+                return SSAName(node.id, version=node.version, ctx=attrs['ctx'])
             case nodes.Load:
                 return ast.Load()
             case nodes.Store:

@@ -10,7 +10,7 @@ from cascade.frontend.dataflow_analysis.split_stratagy import LinearSplitStratag
 from cascade.frontend.dataflow_analysis.split_function_builder import SplitFunctionBuilder
 from cascade.frontend.dataflow_analysis.ssa_converter import SSAConverter
 from cascade.frontend.ast_ import unparse
-
+from cascade.frontend.transformers import SelfTranformer
 
 class Compiler:
 
@@ -24,10 +24,15 @@ class Compiler:
 
     def compile_class(self, cls: ClassWrapper):
         cls_desc: ClassDescriptor = cls.class_desc
+        print()
         for method_desc in cls_desc.methods_dec:
             if method_desc.method_name == '__init__':
                 continue
+            print('-'*100)
+            print(f'COMPILING {method_desc.method_name}')
+            print('-'*100)
             self.compile_method(method_desc)
+            print('\n\n')
 
     def compile_method(self, method_desc: MethodDescriptor):
         """ Compiles class method, executes multiple passes.
@@ -51,6 +56,13 @@ class Compiler:
         # invocations to the function bodies.
         split_builder: SplitFunctionBuilder = SplitFunctionBuilder(cfg, method_desc.method_name)
         split_builder.build_split_functions()
+
+        # Change self to state in split functions.
+        for f in split_builder.functions:
+            SelfTranformer().visit(f)
+            # set lineno and col_offset for generated nodes.
+            # ast.fix_missing_locations(f)
+        #TODO: change self into state in split functions.
         # pass 5: Create dataflow graph.
         self.print_split_functions(split_builder.functions)
 
