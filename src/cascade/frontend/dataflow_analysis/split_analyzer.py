@@ -16,13 +16,8 @@ class SplitAnalyzer(CFGVisitor):
         self.new_blocks: list[BaseBlock] = []
     
     def split(self):
-        self.visit_blocks(self.cfg.blocks)
+        self.breadth_first_walk(self.cfg)
         self.add_new_blocks_to_cfg()
-
-    def visit_ifblock(self, block: IFBlock):
-        block.test
-        self.visit_generic_block(block.body)
-        self.visit_generic_block(block.or_else)
 
     def visit_block(self, block: Block):
         """ Split block and than adjust edges for the cfg.
@@ -39,6 +34,9 @@ class SplitAnalyzer(CFGVisitor):
             split_block, continuation = self.split_stratagy.split(continuation)
             if not first_split:
                 self.cfg.remove_block(block)
+                # Update the CFG entry if block is current entry.
+                if self.cfg.entry == block:
+                    self.cfg.entry = split_block
                 first_split = split_block
 
             # In the case of multiple splits set the next block of the previously created
@@ -48,11 +46,14 @@ class SplitAnalyzer(CFGVisitor):
             previous_block = split_block
             self.new_blocks.append(split_block)
         
-        # The continuation needs to be put in a block...
+        # Create a block from the left over continuation statements if any.
+        # If not "previous_block" there was no split and there is no need to
+        # create a block of contiunation since "block" was never removed from cfg.blocks. 
         if continuation and previous_block:
             continuation_block: Block = Block(continuation)
             previous_block.set_next_block(continuation_block)
             previous_block = continuation_block
+            self.new_blocks.append(continuation_block)
         
         # The existence of first split indicates that a split occured.
         if first_split:

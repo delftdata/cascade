@@ -22,7 +22,7 @@ class SplitFunctionBuilder(CFGVisitor):
         self.split_counter = count()
     
     def build_split_functions(self):
-        self.visit_blocks(self.cfg.blocks)
+        self.breadth_first_walk(self.cfg)
     
     def visit_block(self, block: Block):
         """ Put the blocks statements into a function.
@@ -32,10 +32,7 @@ class SplitFunctionBuilder(CFGVisitor):
     
     def visit_ifblock(self, block: IFBlock):
         if_cond_num: int = next(self.if_cond_counter)
-        #TODO: Add return stmnt around tests and init vars from variable map
         self.add_new_function([ast.Return(block.test)], [], f'{self.method_name}_if_cond_{if_cond_num}')
-        self.visit_generic_block(block.body)
-        self.visit_generic_block(block.or_else)
     
     def visit_splitblock(self, block: SplitBlock):
         """ Add split block to function. Add remote function calls to key stack
