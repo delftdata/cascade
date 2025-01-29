@@ -33,15 +33,16 @@ class SplitFunctionBuilder(CFGVisitor):
     def visit_ifblock(self, block: IFBlock):
         if_cond_num: int = next(self.if_cond_counter)
         #TODO: Add return stmnt around tests and init vars from variable map
-        self.add_new_function(ast.Return(block.test), [], f'{self.method_name}_if_cond_{if_cond_num}')
-        self.add_new_function(block.body, [], f'{self.method_name}_if_body_{if_cond_num}')
-        self.add_new_function(block.or_else, [], f'{self.method_name}_or_else_{if_cond_num}')
+        self.add_new_function([ast.Return(block.test)], [], f'{self.method_name}_if_cond_{if_cond_num}')
+        self.visit_generic_block(block.body)
+        self.visit_generic_block(block.or_else)
     
     def visit_splitblock(self, block: SplitBlock):
         """ Add split block to function. Add remote function calls to key stack
         """
         key_stack_call: ast.Statement = self.transform_remote_call_to_callstack(block.remote_function_calls)
-        self.add_new_function(block.statements + [key_stack_call], [], f'{self.method_name}_split_{next(self.split_counter)}')
+        if block.statements:
+            self.add_new_function(block.statements + [key_stack_call], [], f'{self.method_name}_split_{next(self.split_counter)}')
     
     def transform_remote_call_to_callstack(self, remote_calls: list[ast.stmt]):
         """ Transforms a remote entity invocation. Appends right key to callstack.
@@ -56,13 +57,14 @@ class SplitFunctionBuilder(CFGVisitor):
             args,
             statements,
             [],
-            []) # returns argumentss
+            [],
+            lineno=0) # returns argumentss
         self.functions.append(new_function)
     
     @staticmethod
     def get_function_args() -> ast.arguments:
         arg_list: list[ast.Arg] = SplitFunctionBuilder.arg_list()
-        return ast.arguments([], arg_list)
+        return ast.arguments(posonlyargs=[], args=arg_list, kwonlyargs=[], defaults=[])
     
     @staticmethod
     def arg_list():

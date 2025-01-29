@@ -1,3 +1,5 @@
+import ast 
+
 from cascade.wrappers import ClassWrapper
 from cascade.descriptors import ClassDescriptor, MethodDescriptor
 from cascade.frontend.ast_visitors import ExtractTypeVisitor
@@ -7,6 +9,8 @@ from cascade.frontend.dataflow_analysis.split_analyzer import SplitAnalyzer
 from cascade.frontend.dataflow_analysis.split_stratagy import LinearSplitStratagy
 from cascade.frontend.dataflow_analysis.split_function_builder import SplitFunctionBuilder
 from cascade.frontend.dataflow_analysis.ssa_converter import SSAConverter
+from cascade.frontend.ast_ import unparse
+
 
 class Compiler:
 
@@ -47,8 +51,12 @@ class Compiler:
         # invocations to the function bodies.
         split_builder: SplitFunctionBuilder = SplitFunctionBuilder(cfg, method_desc.method_name)
         split_builder.build_split_functions()
-        split_builder.functions
+        res = ''
+        for f in split_builder.functions:
+            s = unparse(f)
+            res += s + '\n\n'
         # pass 5: Create dataflow graph.
+        print(res)
 
     def get_entity_names(self) -> str:
         """Returns a list with the names of all registered entities"""
