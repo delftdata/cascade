@@ -11,6 +11,7 @@ from cascade.frontend.dataflow_analysis.split_function_builder import SplitFunct
 from cascade.frontend.dataflow_analysis.ssa_converter import SSAConverter
 from cascade.frontend.ast_ import unparse
 from cascade.frontend.transformers import SelfTranformer
+from cascade.frontend.dataflow_analysis.name_blocks import NameBlocks
 
 class Compiler:
 
@@ -51,21 +52,33 @@ class Compiler:
         # pass 3: create split functions of cfg blocks.
         split_analyzer: SplitAnalyzer = SplitAnalyzer(cfg, LinearSplitStratagy(self.entities, instance_type_map))
         split_analyzer.split()
+        # Give each block a unique name which will be used to name the split functions and create 
+        # the dataflow.
+        NameBlocks(cfg, method_desc.method_name).name()
         # pass 4: Create split functions from control flow graph.
         # Keep the code in ast form (do not convert to string) and add the remote function 
-        # invocations to the function bodies.
+        # invocations to the function bodies
         split_builder: SplitFunctionBuilder = SplitFunctionBuilder(cfg, method_desc.method_name)
-        split_builder.build_split_functions()
+        split_functions: list[ast.FunctionDef] = split_builder.build_split_functions()
 
         # Change self to state in split functions.
-        for f in split_builder.functions:
-            SelfTranformer().visit(f)
-            # set lineno and col_offset for generated nodes.
-            # ast.fix_missing_locations(f)
-        #TODO: change self into state in split functions.
+        self.transform_self_to_state(split_functions)
+
+        df = self.build_dataflow(cfg)
         # pass 5: Create dataflow graph.
         self.print_split_functions(split_builder.functions)
 
+    def transform_self_to_state(self, split_functions: list[ast.FunctionDef]):
+        """ Replaces self with state.
+        """
+        for f in split_functions:
+            SelfTranformer().visit(f)
+            # set lineno and col_offset for generated nodes.
+            ast.fix_missing_locations(f)
+
+    def build_dataflow(self, cfg: ControlFlowGraph):
+        """ Build the dataflow from th ControlFlowGraph.
+        """
 
     def print_split_functions(self, functions):
         res = ''

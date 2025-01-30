@@ -21,27 +21,24 @@ class SplitFunctionBuilder(CFGVisitor):
         self.cfg: ControlFlowGraph = cfg
         self.method_name: str = method_name
         self.functions: list[ast.FunctionDef] = []
-        self.counter = count()
-        self.if_cond_counter = count()
-        self.split_counter = count()
     
-    def build_split_functions(self):
+    def build_split_functions(self) -> list[ast.FunctionDef]:
         self.breadth_first_walk(self.cfg)
+        return self.functions
     
     def visit_block(self, block: Block):
         """ Put the blocks statements into a function.
         """
-        self.add_new_function(block.statements, f'{self.method_name}_{next(self.counter)}')
+        self.add_new_function(block.statements, block.name)
     
     def visit_ifblock(self, block: IFBlock):
-        if_cond_num: int = next(self.if_cond_counter)
-        self.add_new_function([ast.Return(block.test)], f'{self.method_name}_if_cond_{if_cond_num}')
+        self.add_new_function([ast.Return(block.test)], block.name)
     
     def visit_splitblock(self, block: SplitBlock):
         """ Add split block to function. Add remote function calls to key stack
         """
         key_stack_call: ast.Expr = self.transform_remote_call_to_callstack(block.remote_function_calls)
-        self.add_new_function(block.statements + [key_stack_call], f'{self.method_name}_split_{next(self.split_counter)}')
+        self.add_new_function(block.statements + [key_stack_call], block.name)
     
     def transform_remote_call_to_callstack(self, remote_calls: list[ast.stmt]) -> ast.Expr:
         """ Transforms a remote entity invocation. Appends right key to callstack.
