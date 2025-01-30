@@ -9,13 +9,8 @@ from klara.core.cfg import Cfg
 
 from cascade.wrappers import ClassWrapper
 from cascade.descriptors import ClassDescriptor
-from cascade.frontend.generator.generate_split_functions import GenerateSplitFunctions
-from cascade.frontend.generator.generate_dataflow import GenerateDataflow
 from cascade.dataflow.dataflow import OpNode, InvokeMethod
-from cascade.frontend.generator.build_compiled_method_string import BuildCompiledMethodsString
 from cascade.frontend.ast_visitors import ExtractTypeVisitor
-from cascade.frontend.dataflow_analysis.split_control_flow import SplitControlFlow
-from cascade.frontend.generator.dataflow_linker import DataflowLinker
 from cascade.frontend.compiler import Compiler
 from cascade.frontend.dataflow_analysis.ssa_converter import SSAConverter
 
@@ -61,43 +56,6 @@ def get_entity_names() -> str:
 
 def get_compiled_methods() -> str:
     Compiler.compile(registered_classes)
-
-
-def get_compiled_methods_old() -> str:
-    """Returns a list with the compiled methods as string"""
-    compiled_methods: list[str] = []
-    entities: list[str] = get_entity_names()
-    for cls in registered_classes:
-        cls_desc: ClassDescriptor = cls.class_desc
-        for method_desc in cls_desc.methods_dec:
-            if method_desc.method_name == '__init__':
-                continue
-            instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
-            control_flow_splits = SplitControlFlow.split(method_desc.method_node, method_desc.method_name)
-            split_functions = []
-            control_flow_node_map: dict[str, list[list[OpNode]]]= {}
-            for split in control_flow_splits.nodes():
-                if split.is_if_condition:
-                    # if node only exists of condition invocation.
-                    if_cond_node = OpNode(cls_desc.class_name, InvokeMethod(split.method_name))
-                    control_flow_node_map[split.method_name] = [[if_cond_node]]
-                    continue
-                
-                split.build_dataflow()
-                control_flow_split_split_functions = GenerateSplitFunctions.generate(split.dataflow, cls_desc.class_name, entities, instance_type_map) 
-                split_functions.extend(control_flow_split_split_functions)
-                node_list: list[list[OpNode]] = GenerateDataflow.generate(control_flow_split_split_functions, instance_type_map)
-                control_flow_node_map[split.method_name] = node_list
-
-            df = DataflowLinker.link(cls_desc.class_name, control_flow_node_map, control_flow_splits)
-            
-            # link after
-                
-                # maybe pass some num here
-            class_compiled_methods: str = BuildCompiledMethodsString.build(split_functions)
-            compiled_methods.append(class_compiled_methods)
-
-    return '\n\n'.join(compiled_methods)
 
 
 def clear():
