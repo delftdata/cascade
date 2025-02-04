@@ -285,6 +285,31 @@ class ByteSerializer(SerializationSchema, DeserializationSchema):
             self, j_deserialization_schema=j_byte_string_schema
         )
 
+def deserialize_and_timestamp(x) -> Event:
+    t1 = time.time()
+    e: Event = pickle.loads(x)
+    t2 = time.time()
+    if e.metadata["in_t"] is None:
+        e.metadata["in_t"] = t1
+    e.metadata["current_in_t"] = t1
+    e.metadata["deser_times"].append(t2 - t1)
+    return e
+
+def timestamp_event(e: Event) -> Event:
+    t1 = time.time()
+    try:
+        e.metadata["flink_time"] += t1 - e.metadata["current_in_t"]
+    except KeyError:
+        pass
+    return e
+
+def timestamp_result(e: EventResult) -> EventResult:
+    t1 = time.time()
+    e.metadata["out_t"] = t1
+    e.metadata["flink_time"] += t1 - e.metadata["current_in_t"] 
+    e.metadata["loops"] = len(e.metadata["deser_times"])
+    e.metadata["roundtrip"] = e.metadata["out_t"] - e.metadata["in_t"]
+    return e
 
 class FlinkRuntime():
     """A Runtime that runs Dataflows on Flink."""
@@ -402,7 +427,7 @@ class FlinkRuntime():
                     WatermarkStrategy.no_watermarks(),
                     "Kafka Source"
                 )
-                .map(lambda x: pickle.loads(x))
+                .map(lambda x: deserialize_and_timestamp(x))
                 .name("DESERIALIZE")
                 # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
             )
@@ -510,16 +535,21 @@ class FlinkRuntime():
         ds = full_stream_filtered.union(full_stream_unfiltered)
 
         # Output the stream
+        results = (
+            ds
+                .filter(lambda e: isinstance(e, EventResult))
+                .map(lambda e: timestamp_result(e))
+        )
         if output == "collect":
-            ds_external = ds.filter(lambda e: isinstance(e, EventResult)).execute_and_collect() 
+            ds_external = results.execute_and_collect() 
         elif output == "stdout":
-            ds_external = ds.filter(lambda e: isinstance(e, EventResult)).print()
+            ds_external = results.print()
         elif output == "kafka":
-            ds_external = ds.filter(lambda e: isinstance(e, EventResult)).sink_to(self.kafka_external_sink).name("EXTERNAL KAFKA SINK") 
+            ds_external = results.sink_to(self.kafka_external_sink).name("EXTERNAL KAFKA SINK") 
         else:
             raise ValueError(f"Invalid output: {output}")
 
-        ds_internal = ds.filter(lambda e: isinstance(e, Event)).sink_to(self.kafka_internal_sink).name("INTERNAL KAFKA SINK")
+        ds_internal = ds.filter(lambda e: isinstance(e, Event)).map(lambda e: timestamp_event(e)).sink_to(self.kafka_internal_sink).name("INTERNAL KAFKA SINK")
 
         if run_async:
             logger.debug("FlinkRuntime starting (async)")

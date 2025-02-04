@@ -9,13 +9,14 @@ from multiprocessing import Pool
 # import cascade
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from cascade.dataflow.dataflow import Event, InitClass, InvokeMethod, OpNode
+from cascade.dataflow.dataflow import Event, EventResult, InitClass, InvokeMethod, OpNode
 from cascade.runtime.flink_runtime import FlinkClientSync, FlinkOperator, FlinkRuntime, FlinkStatelessOperator
 from deathstar.entities.flight import Flight, flight_op
 from deathstar.entities.hotel import Geo, Hotel, Rate, hotel_op
 from deathstar.entities.recommendation import Recommendation, recommend_op
 from deathstar.entities.search import Search, search_op
 from deathstar.entities.user import User, user_op
+import pandas as pd
 
 
 class DeathstarDemo():
@@ -219,8 +220,6 @@ def reserve():
     hotel_id = random.randint(0, 99)
     flight_id = random.randint(0, 99)
     
-    # user = User("user1", "pass")
-    # user.order(flight, hotel)
     user_id = "Cornell_" + str(random.randint(0, 500))
 
     return Event(
@@ -250,43 +249,52 @@ def deathstar_workload_generator():
             yield reserve()
         c += 1
 
+def reserve_workload_generator():
+    while True:
+        yield reserve()
+
+def user_login_workload_generator():
+    while True:
+        yield user_login()
+
 threads = 1
-messages_per_second = 10
-sleeps_per_second = 10
+messages_per_burst = 1
+sleeps_per_burst = 1
 sleep_time = 0.0085
-seconds = 10
+seconds_per_burst = 1
+bursts = 100
 
 
 def benchmark_runner(proc_num) -> dict[int, dict]:
     print(f'Generator: {proc_num} starting')
     client = FlinkClientSync("deathstar", "ds-out", "localhost:9092", True)
-    deathstar_generator = deathstar_workload_generator()
-    # futures: dict[int, dict] = {}
+    deathstar_generator = reserve_workload_generator()
     start = timer()
-    for _ in range(seconds):
+    
+    for _ in range(bursts):
         sec_start = timer()
-        for i in range(messages_per_second):
-            if i % (messages_per_second // sleeps_per_second) == 0:
+
+        # send burst of messages
+        for i in range(messages_per_burst):
+
+            # sleep sometimes between messages
+            if i % (messages_per_burst // sleeps_per_burst) == 0:
                 time.sleep(sleep_time)
             event = next(deathstar_generator)
-            # func_name = event.dataflow.name if event.dataflow is not None else "login" # only login has no dataflow
-            # key = event.key_stack[0]
-            # params = event.variable_map
             client.send(event)
-            # futures[event._id] = {"event": f'{func_name} {key}->{params}'}
         
         client.flush()
         sec_end = timer()
+
+        # wait out the second
         lps = sec_end - sec_start
-        if lps < 1:
+        if lps < seconds_per_burst:
             time.sleep(1 - lps)
         sec_end2 = timer()
-        print(f'Latency per second: {sec_end2 - sec_start}')
+        print(f'Latency per burst: {sec_end2 - sec_start} ({seconds_per_burst})')
+        
     end = timer()
-    print(f'Average latency per second: {(end - start) / seconds}')
-    # styx.close()
-    # for key, metadata in styx.delivery_timestamps.items():
-    #     timestamp_futures[key]["timestamp"] = metadata
+    print(f'Average latency per burst: {(end - start) / bursts} ({seconds_per_burst})')
     
     done = False
     while not done:
@@ -302,36 +310,36 @@ def benchmark_runner(proc_num) -> dict[int, dict]:
     return futures
 
 
-def write_dict_to_csv(futures_dict, filename):
+def write_dict_to_pkl(futures_dict, filename):
     """
-    Writes a dictionary of event data to a CSV file.
+    Writes a dictionary of event data to a pickle file.
 
     Args:
         futures_dict (dict): A dictionary where each key is an event ID and the value is another dict.
-        filename (str): The name of the CSV file to write to.
+        filename (str): The name of the pickle file to write to.
     """
-    # Define the column headers
-    headers = ["event_id", "sent", "sent_t", "ret", "ret_t", "latency"]
-    
-    # Open the file for writing
-    with open(filename, mode='w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=headers)
-        
-        # Write the headers
-        writer.writeheader()
-        
-        # Write the data rows
-        for event_id, event_data in futures_dict.items():
-            # Prepare a row where the 'event_id' is the first column
-            row = {
-                "event_id": event_id,
-                "sent": event_data.get("sent"),
-                "sent_t": event_data.get("sent_t"),
-                "ret": event_data.get("ret"),
-                "ret_t": event_data.get("ret_t"),
-                "latency": event_data["ret_t"][1] - event_data["sent_t"][1]
-            }
-            writer.writerow(row)
+
+    # Prepare the data for the DataFrame
+    data = []
+    for event_id, event_data in futures_dict.items():
+        ret: EventResult = event_data.get("ret")
+        row = {
+            "event_id": event_id,
+            "sent": str(event_data.get("sent")),
+            "sent_t": event_data.get("sent_t"),
+            "ret": str(event_data.get("ret")),
+            "ret_t": event_data.get("ret_t"),
+            "roundtrip": ret.metadata["roundtrip"] if ret else None,
+            "flink_time": ret.metadata["flink_time"] if ret else None,
+            "deser_times": ret.metadata["deser_times"] if ret else None,
+            "loops": ret.metadata["loops"] if ret else None,
+            "latency": event_data["ret_t"][1] - event_data["sent_t"][1] if ret else None
+        }
+        data.append(row)
+
+    # Create a DataFrame and save it as a pickle file
+    df = pd.DataFrame(data)
+    df.to_pickle(filename)
 
 def main():
     ds = DeathstarDemo()
@@ -361,7 +369,7 @@ def main():
             print(result)
             r += 1
     print(f"{r}/{t} results recieved.")
-    write_dict_to_csv(results, "test2.csv")
+    write_dict_to_pkl(results, "test2.pkl")
 
 if __name__ == "__main__":
     main()

@@ -96,7 +96,8 @@ class OpNode(Node):
                 event.variable_map,
                 event.dataflow,
                 _id=event._id,
-                collect_target=ct)
+                collect_target=ct,
+                metadata=event.metadata)
 
                 for ct in collect_targets]
         else:
@@ -105,7 +106,8 @@ class OpNode(Node):
                     event.variable_map, 
                     event.dataflow,
                     _id=event._id,
-                    collect_target=ct)
+                    collect_target=ct,
+                    metadata=event.metadata)
                     
                     for target, ct in zip(targets, collect_targets)]
     
@@ -155,7 +157,8 @@ class SelectAllNode(Node):
             event.variable_map | {self.assign_key_to: key}, 
             event.dataflow,
             _id=event._id,
-            collect_target=ct)
+            collect_target=ct,
+            metadata=event.metadata)
             for ct, key in zip(collect_targets, keys)]
 
 @dataclass
@@ -176,7 +179,8 @@ class CollectNode(Node):
                     event.variable_map, 
                     event.dataflow,
                     _id=event._id,
-                    collect_target=ct)
+                    collect_target=ct,
+                    metadata=event.metadata)
                     
                     for target, ct in zip(targets, collect_targets)]
 
@@ -338,6 +342,13 @@ class CollectTarget:
     result_idx: int
     """The index this result should be in the collected array."""
 
+def metadata_dict() -> dict:
+    return {
+        "in_t": None,
+        "deser_times": [],
+        "flink_time": 0
+    }
+
 @dataclass
 class Event():
     """An Event is an object that travels through the Dataflow graph."""
@@ -360,6 +371,9 @@ class Event():
     """Tells each mergenode (key) how many events to merge on"""
 
     _id_counter: int = field(init=False, default=0, repr=False)
+
+    metadata: dict = field(default_factory=metadata_dict)
+    """Event metadata containing, for example, timestamps for benchmarking"""
     
     def __post_init__(self):
         if self._id is None:
@@ -371,12 +385,12 @@ class Event():
         """Propogate this event through the Dataflow."""
 
         if self.dataflow is None:
-            return EventResult(self._id, result)
+            return EventResult(self._id, result, self.metadata)
         
         targets = self.dataflow.get_neighbors(self.target)
         
         if len(targets) == 0:
-            return EventResult(self._id, result)
+            return EventResult(self._id, result, self.metadata)
         else:
             current_node = self.target
 
@@ -390,3 +404,4 @@ class Event():
 class EventResult():
     event_id: int
     result: Any
+    metadata: dict
