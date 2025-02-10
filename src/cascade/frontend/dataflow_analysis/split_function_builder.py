@@ -75,9 +75,8 @@ class SplitFunctionBuilder(CFGVisitor):
             method_name,
             args,
             statements,
-            [],
-            [],
-            lineno=0) # returns argumentss
+            decorator_list=[]
+         ) # returns argumentss
         self.functions.append(new_function)
     
     @staticmethod
@@ -87,7 +86,7 @@ class SplitFunctionBuilder(CFGVisitor):
             i.e.: (variable_map, state, key_stack)
         """
         arg_list: list[ast.Arg] = SplitFunctionBuilder.arg_list()
-        return ast.arguments(posonlyargs=[], args=arg_list, kwonlyargs=[], defaults=[])
+        return ast.arguments(posonlyargs=[], args=arg_list, kwonlyargs=[], kw_defaults=[], defaults=[])
     
     @staticmethod
     def arg_list():

@@ -10,8 +10,10 @@ from cascade.frontend.dataflow_analysis.split_stratagy import LinearSplitStratag
 from cascade.frontend.dataflow_analysis.split_function_builder import SplitFunctionBuilder
 from cascade.frontend.dataflow_analysis.ssa_converter import SSAConverter
 from cascade.frontend.ast_ import unparse
-from cascade.frontend.transformers import SelfTranformer
+from cascade.frontend.transformers import SelfTranformer, TransformSSANode
 from cascade.frontend.dataflow_analysis.name_blocks import NameBlocks
+from cascade.frontend.dataflow_analysis.dataflow_builder import build_dataflow
+from cascade.dataflow.operator import StatefulOperator
 
 class Compiler:
 
@@ -20,20 +22,71 @@ class Compiler:
         self.entities: list[str] = self.get_entity_names()
             
     def compile_registered_classes(self) -> str:
+        operators = {}
+        operator_control_flow_graphs = {}
+        # For each class compile methods and build operators
         for cls in self.registered_classes:
-            self.compile_class(cls)
+            class_name: str = cls.class_desc.class_name 
+            operator, cfgs = self.compile_class(cls)
+            operators[class_name] = operator
+            operator_control_flow_graphs[class_name] = cfgs
+        
+        # For each class build df
+        dfs = {}
+        for cls in self.registered_classes:
+            class_name = cls.class_desc.class_name
+            for method_desc in cls.class_desc.methods_dec:
+                method_name: str = method_desc.method_name
+                if method_name == '__init__':
+                    continue
+                df_name: str = f'{class_name}_{method_name}'
+                cfg = operator_control_flow_graphs[class_name][method_name]
+                self_operator: StatefulOperator = operators[class_name]
+                instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
+                df = build_dataflow(df_name, cfg, self_operator, operators, instance_type_map)
+                dfs[df_name] = df
+        print(dfs)
+            
+        
 
     def compile_class(self, cls: ClassWrapper):
         cls_desc: ClassDescriptor = cls.class_desc
         print()
+        split_functions = []
+        cfgs = {}
         for method_desc in cls_desc.methods_dec:
             if method_desc.method_name == '__init__':
                 continue
             print('-'*100)
             print(f'COMPILING {method_desc.method_name}')
             print('-'*100)
-            self.compile_method(method_desc)
+            split, cfg = self.compile_method(method_desc)
+            split_functions.extend(split)
             print('\n\n')
+            cfgs[method_desc.method_name] = cfg
+        operator = self.operator_from_split_functions(cls.cls, split_functions) 
+        return operator, cfgs
+    
+    def operator_from_split_functions(self, entity, split_functions: list[ast.FunctionDef]):
+        # There are two aproaches here, for code generation, we could keep everything in ast form and
+        # output the generated code to a file using an unparser.
+        # However for simplicity we choose to compile the input methods and continue with python code
+        # creating a df.
+        module = ast.Module(
+            body=split_functions,
+            type_ignores=[])
+        TransformSSANode().visit(module)
+        ast.fix_missing_locations(module)
+        m = compile(module, 'placeholder', 'exec')
+        exec(m)
+        # some python magic using eval to create the method dict.
+        methods = {}
+        for f in split_functions:
+            f_name = f.name
+            methods[f_name] = eval(f_name)
+        
+        return StatefulOperator(entity, methods, {})
+
 
     def compile_method(self, method_desc: MethodDescriptor):
         """ Compiles class method, executes multiple passes.
@@ -64,9 +117,11 @@ class Compiler:
         # Change self to state in split functions.
         self.transform_self_to_state(split_functions)
 
-        df = self.build_dataflow(cfg)
         # pass 5: Create dataflow graph.
         self.print_split_functions(split_builder.functions)
+
+        return split_functions, cfg
+
 
     def transform_self_to_state(self, split_functions: list[ast.FunctionDef]):
         """ Replaces self with state.
@@ -75,10 +130,6 @@ class Compiler:
             SelfTranformer().visit(f)
             # set lineno and col_offset for generated nodes.
             ast.fix_missing_locations(f)
-
-    def build_dataflow(self, cfg: ControlFlowGraph):
-        """ Build the dataflow from th ControlFlowGraph.
-        """
 
     def print_split_functions(self, functions):
         res = ''
