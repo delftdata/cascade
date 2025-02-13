@@ -7,3 +7,7 @@ __pycache__
 *.log
 *.egg-info
 build
+
+# Experiment artifacts
+*.png
+*.pkl

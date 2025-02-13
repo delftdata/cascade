@@ -70,15 +70,18 @@ class OpNode(Node):
         return OpNode.propogate_opnode(self, event, targets, result)
 
     @staticmethod
-    def propogate_opnode(node: Union['OpNode', 'StatelessOpNode'], event: 'Event', targets: list[Node], result: Any) -> list['Event']:
+    def propogate_opnode(node: Union['OpNode', 'StatelessOpNode'], event: 'Event', targets: list[Node], 
+                         result: Any) -> list['Event']:
+        num_targets = 1 if node.is_conditional else len(targets)
+
         if event.collect_target is not None:
             # Assign new collect targets
             collect_targets = [
-                event.collect_target for i in range(len(targets))
+                event.collect_target for i in range(num_targets)
             ]
         else:
             # Keep old collect targets
-            collect_targets = [node.collect_target for i in range(len(targets))]
+            collect_targets = [node.collect_target for i in range(num_targets)]
 
         if node.is_conditional:
             edges = event.dataflow.nodes[event.target.id].outgoing_edges
@@ -90,7 +93,9 @@ class OpNode(Node):
             target_true = true_edges[0].to_node
             target_false = false_edges[0].to_node
 
-            
+            assert len(collect_targets) == 1, "num targets should be 1"
+            ct = collect_targets[0]
+
             return [Event(
                 target_true if result else target_false,
                 event.variable_map,
@@ -98,8 +103,8 @@ class OpNode(Node):
                 _id=event._id,
                 collect_target=ct,
                 metadata=event.metadata)
+            ]
 
-                for ct in collect_targets]
         else:
             return [Event(
                     target,
@@ -133,6 +138,26 @@ class StatelessOpNode(Node):
 
     def propogate(self, event: 'Event', targets: List[Node], result: Any) -> List['Event']:
         return OpNode.propogate_opnode(self, event, targets, result)
+    
+@dataclass
+class DataflowNode(Node):
+    """A node in a `DataFlow` corresponding to the call of another dataflow"""
+    dataflow: 'DataFlow'
+    variable_rename: dict[str, str]
+    
+    assign_result_to: Optional[str] = None
+    """What variable to assign the result of this node to, if any."""
+    is_conditional: bool = False
+    """Whether or not the boolean result of this node dictates the following path."""
+    collect_target: Optional['CollectTarget'] = None
+    """Whether the result of this node should go to a CollectNode."""
+
+    def propogate(self, event: 'Event', targets: List[Node], result: Any) -> List['Event']:
+        # remap the variable map of event into the new event
+
+        # add the targets as some sort of dataflow "exit nodes"
+        return self.dataflow
+
 
 @dataclass
 class SelectAllNode(Node):
@@ -207,35 +232,19 @@ class DataFlow:
         item1[Item.get_price]
         item2[Item.get_price]
         user2[User.buy_items_1]
-        merge{Merge}
+        collect{Collect}
         user1-- item1_key -->item1;
         user1-- item2_key -->item2;
-        item1-- item1_price -->merge;
-        item2-- item2_price -->merge;
-        merge-- [item1_price, item2_price] -->user2;
-    ```
-
-    In code, one would write:
-
-    ```py
-    df = DataFlow("user.buy_items")
-    n0 = OpNode(User, InvokeMethod("buy_items_0"))
-    n1 = OpNode(Item, InvokeMethod("get_price"))
-    n2 = OpNode(Item, InvokeMethod("get_price"))
-    n3 = MergeNode()
-    n4 = OpNode(User, InvokeMethod("buy_items_1"))
-    df.add_edge(Edge(n0, n1))
-    df.add_edge(Edge(n0, n2))
-    df.add_edge(Edge(n1, n3))
-    df.add_edge(Edge(n2, n3))
-    df.add_edge(Edge(n3, n4))
+        item1-- item1_price -->collect;
+        item2-- item2_price -->collect;
+        collect-- [item1_price, item2_price] -->user2;
     ```
     """
     def __init__(self, name: str):
         self.name: str = name
         self.adjacency_list: dict[int, list[int]] = {}
         self.nodes: dict[int, Node] = {}
-        self.entry: Node = None
+        self.entry: Union[Node, List[Node]] = None
 
     def add_node(self, node: Node):
         """Add a node to the Dataflow graph if it doesn't already exist."""
@@ -278,6 +287,12 @@ class DataFlow:
 
         # Find children (nodes that this node points to)
         children = self.adjacency_list[node.id]
+        
+        # Set df entry
+        if self.entry == node:
+            print(children)
+            assert len(children) == 1, "cannot remove entry node if it doesn't exactly one child"
+            self.entry = self.nodes[children[0]]
 
         # Connect each parent to each child
         for parent_id in parents:
@@ -296,6 +311,8 @@ class DataFlow:
         for child_id in children:
             child_node = self.nodes[child_id]
             self.remove_edge(node, child_node)
+        
+        
 
         # Remove the node from the adjacency list and nodes dictionary
         del self.adjacency_list[node.id]
@@ -322,17 +339,15 @@ class DataFlow:
         lines.append("}")
         return "\n".join(lines)
     
-class Result(ABC):
-    pass
-
-@dataclass
-class Arrived(Result):
-    val: Any
-
-@dataclass
-class NotArrived(Result):
-    pass
-
+    def generate_event(self, variable_map: dict[str, Any]) -> Union['Event', list['Event']]:
+        if isinstance(self.entry, list):
+            assert len(self.entry) != 0
+            first_event = Event(self.entry[0], variable_map, self)
+            id = first_event._id
+            return [first_event] + [Event(entry, variable_map, self, _id=id) for entry in self.entry[1:]] 
+        else:
+            return Event(self.entry, variable_map, self)
+    
 @dataclass
 class CollectTarget:
     target_node: CollectNode

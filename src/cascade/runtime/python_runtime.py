@@ -16,7 +16,7 @@ class PythonStatefulOperator():
 
         key = event.variable_map[event.target.read_key_from]
 
-        print(f"PythonStatefulOperator: {event}")
+        print(f"PythonStatefulOperator[{self.operator.entity.__name__}[{key}]]: {event}")
 
         if isinstance(event.target.method_type, InitClass):
             result = self.operator.handle_init_class(*event.variable_map.values())
@@ -50,7 +50,7 @@ class PythonStatelessOperator():
     def process(self, event: Event):
         assert(isinstance(event.target, StatelessOpNode))
 
-
+        print(f"PythonStatelessOperator[{self.operator.dataflow.name}]: {event}")
 
         if isinstance(event.target.method_type, InvokeMethod):
             result = self.operator.handle_invoke_method(

@@ -22,9 +22,9 @@ def dead_node_elimination(stateful_ops: list[StatefulOperator], stateless_ops: l
     # Find dead functions
     dead_func_names = set()
     for op in stateful_ops:
-        for method in op._methods.values():
+        for name, method in op._methods.items():
             if is_no_op(method):
-                dead_func_names.add(method.__qualname__)
+                dead_func_names.add(name)
         
     # Remove them from dataflows
     for op in stateful_ops:
@@ -40,5 +40,24 @@ def dead_node_elimination(stateful_ops: list[StatefulOperator], stateless_ops: l
                 print(node)
                 dataflow.remove_node(node)
                 print(dataflow.to_dot())
+
+    # Find dead functions
+    dead_func_names = set()
+    for op in stateless_ops:
+        for name, method in op._methods.items():
+            if is_no_op(method):
+                dead_func_names.add(name)
+        
+    # Remove them from dataflows
+    for op in stateless_ops:
+        to_remove = []
+        for node in op.dataflow.nodes.values():
+            if hasattr(node, "method_type") and isinstance(node.method_type, InvokeMethod):
+                im: InvokeMethod = node.method_type
+                if im.method_name in dead_func_names:
+                    to_remove.append(node)
+
+        for node in to_remove:
+            op.dataflow.remove_node(node)
 
 
