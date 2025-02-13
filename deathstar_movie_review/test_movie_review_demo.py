@@ -4,7 +4,7 @@ from cascade.runtime.python_runtime import PythonClientSync, PythonRuntime
 from deathstar_movie_review.entities.compose_review import ComposeReview, compose_review_op
 from deathstar_movie_review.entities.user import User, user_op
 from deathstar_movie_review.entities.movie import MovieId, movie_id_op, movie_info_op, plot_op
-from deathstar_movie_review.entities.frontend import frontend_op, text_op, unique_id_op
+from deathstar_movie_review.entities.frontend import frontend_op, text_op, unique_id_op, frontend_df_serial
 
 
 
@@ -12,6 +12,11 @@ def test_deathstar_movie_demo_python():
     print("starting")
     runtime = PythonRuntime()
     
+    # make sure we're running the serial version
+    prev_df = frontend_op.dataflow
+    frontend_op.dataflow = frontend_df_serial()
+
+
     print(frontend_op.dataflow.to_dot())
     dead_node_elimination([], [frontend_op])
     print(frontend_op.dataflow.to_dot())
@@ -98,4 +103,7 @@ def test_deathstar_movie_demo_python():
     assert result == expected
 
     print("Success!")
+
+    # put the df back
+    frontend_op.dataflow = prev_df
     
