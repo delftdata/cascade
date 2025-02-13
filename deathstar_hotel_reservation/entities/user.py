@@ -31,10 +31,11 @@ def order_compiled_entry_1(variable_map: dict[str, Any], state: User) -> Any:
     pass
 
 def order_compiled_if_cond(variable_map: dict[str, Any], state: User) -> Any:
-    return variable_map["hotel_reserve"] and variable_map["flight_reserve"]
-
-def order_compiled_if_cond_parallel(variable_map: dict[str, Any], state: User) -> Any:
-    return variable_map["reserves"][0] and variable_map["reserves"][1]
+    # parallel
+    if "reserves" in variable_map:
+        return variable_map["reserves"][0] and variable_map["reserves"][1]
+    else:
+        return variable_map["hotel_reserve"] and variable_map["flight_reserve"]
 
 def order_compiled_if_body(variable_map: dict[str, Any], state: User) -> Any:
     return True
@@ -48,8 +49,7 @@ user_op = StatefulOperator(
         "login": check_compiled,
         "order_compiled_entry_0": order_compiled_entry_0,
         "order_compiled_entry_1": order_compiled_entry_1,
-        # "order_compiled_if_cond": order_compiled_if_cond,
-        "order_compiled_if_cond": order_compiled_if_cond_parallel,
+        "order_compiled_if_cond": order_compiled_if_cond,
         "order_compiled_if_body": order_compiled_if_body,
         "order_compiled_else_body": order_compiled_else_body
     },
