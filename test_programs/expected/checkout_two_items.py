@@ -1,30 +1,22 @@
 from typing import Any
-
+from cascade.dataflow.dataflow import CollectNode, CollectTarget, DataFlow, OpNode, InvokeMethod, Edge
 from cascade.dataflow.operator import StatefulOperator
-from ..target.checkout_two_items import User, Item
-from cascade.dataflow.dataflow import DataFlow, OpNode, InvokeMethod, Edge, CollectNode, CollectTarget
+from test_programs.target.checkout_two_items import User, Item
 
-def buy_two_items_0_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    key_stack.append(
-        [variable_map["item1_key"], variable_map["item2_key"]]
-    )
+def buy_two_items_0_compiled(variable_map: dict[str, Any], state: User) -> Any:
     return None
 
-def buy_two_items_1_compiled(variable_map: dict[str, Any], state: User, key_stack: list[str]) -> Any:
-    key_stack.pop()
-    item_price_1_0 = variable_map['item_price_1']
-    item_price_2_0 = variable_map['item_price_2']
+def buy_two_items_1_compiled(variable_map: dict[str, Any], state: User) -> Any:
+    item_price_1_0 = variable_map['item_price_1_0']
+    item_price_2_0 = variable_map['item_price_2_0']
     total_price_0 = item_price_1_0 + item_price_2_0
     state.balance -= total_price_0
     return state.balance >= 0
 
-
-def get_price_0_compiled(variable_map: dict[str, Any], state: Item, key_stack: list[str]) -> Any:
-    key_stack.pop()
+def get_price_0_compiled(variable_map: dict[str, Any], state: Item) -> Any:
     return state.price
 
 
-# An operator is defined by the underlying class and the functions that can be called
 user_op = StatefulOperator(
     User, 
     {
@@ -39,18 +31,20 @@ item_op = StatefulOperator(
 
 def user_buy_two_items_df():
     df = DataFlow("user.buy_2_items")
-    n0 = OpNode(user_op, InvokeMethod("buy_2_items_0"))
+    n0 = OpNode(User, InvokeMethod("buy_2_items_0"), read_key_from="user_key")
     n1 = OpNode(
-        item_op, 
+        Item, 
         InvokeMethod("get_price"), 
         assign_result_to="item_price_1", 
+        read_key_from="item1_key"
     )
     n2 = OpNode(
-        item_op, 
+        Item, 
         InvokeMethod("get_price"), 
         assign_result_to="item_price_2", 
+        read_key_from="item1_key"
     )
-    n3 = OpNode(user_op, InvokeMethod("buy_2_items_1"))
+    n3 = OpNode(User, InvokeMethod("buy_2_items_1"), read_key_from="user_key")
     df.add_edge(Edge(n0, n1))
     df.add_edge(Edge(n0, n2))
     df.add_edge(Edge(n1, n2))
@@ -62,21 +56,23 @@ def user_buy_two_items_df():
 # For future optimizations (not used)
 def user_buy_two_items_df_parallelized():
     df = DataFlow("user.buy_2_items")
-    n0 = OpNode(user_op, InvokeMethod("buy_2_items_0"))
+    n0 = OpNode(User, InvokeMethod("buy_2_items_0"), read_key_from="user_key")
     n3 = CollectNode(assign_result_to="item_prices", read_results_from="item_price")
     n1 = OpNode(
-        item_op, 
+        Item, 
         InvokeMethod("get_price"), 
         assign_result_to="item_price", 
-        collect_target=CollectTarget(n3, 2, 0)
+        collect_target=CollectTarget(n3, 2, 0),
+        read_key_from="item1_key"
     )
     n2 = OpNode(
-        item_op, 
+        Item, 
         InvokeMethod("get_price"), 
         assign_result_to="item_price", 
-        collect_target=CollectTarget(n3, 2, 1)
+        collect_target=CollectTarget(n3, 2, 1),
+        read_key_from="item1_key"
     )
-    n4 = OpNode(user_op, InvokeMethod("buy_2_items_1"))
+    n4 = OpNode(User, InvokeMethod("buy_2_items_1"), read_key_from="user_key")
     df.add_edge(Edge(n0, n1))
     df.add_edge(Edge(n0, n2))
     df.add_edge(Edge(n1, n3))

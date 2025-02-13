@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"
 
 
 from cascade.runtime.python_runtime import PythonRuntime
-from deathstar.demo import DeathstarDemo, deathstar_workload_generator
+from deathstar_hotel_reservation.demo import DeathstarDemo, deathstar_workload_generator
 from timeit import default_timer as timer
 import csv
 

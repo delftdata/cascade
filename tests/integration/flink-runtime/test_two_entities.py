@@ -10,24 +10,24 @@ import pytest
 def test_two_entities():
     runtime = FlinkRuntime("test_two_entities")
     runtime.init()
-    runtime.add_operator(FlinkOperator(item_op))
-    runtime.add_operator(FlinkOperator(user_op))
+    runtime.add_operator(item_op)
+    runtime.add_operator(user_op)
 
     # Create a User object
     foo_user = User("foo", 100)
-    init_user_node = OpNode(user_op, InitClass())
-    event = Event(init_user_node, ["foo"], {"key": "foo", "balance": 100}, None) 
+    init_user_node = OpNode(User, InitClass(), read_key_from="key")
+    event = Event(init_user_node, {"key": "foo", "balance": 100}, None) 
     runtime.send(event)
 
     # Create an Item object
     fork_item = Item("fork", 5)
-    init_item_node = OpNode(item_op, InitClass())
-    event = Event(init_item_node, ["fork"], {"key": "fork", "price": 5}, None) 
+    init_item_node = OpNode(Item, InitClass(), read_key_from="key")
+    event = Event(init_item_node, {"key": "fork", "price": 5}, None) 
     runtime.send(event)
 
     # Create an expensive Item
     house_item = Item("house", 1000)
-    event = Event(init_item_node, ["house"], {"key": "house", "price": 1000}, None) 
+    event = Event(init_item_node, {"key": "house", "price": 1000}, None) 
     runtime.send(event)
 
     # Have the User object buy the item
@@ -35,10 +35,10 @@ def test_two_entities():
     df = user_op.dataflows["buy_item"]
     
     # User with key "foo" buys item with key "fork"
-    user_buys_fork = Event(df.entry, ["foo"],  {"item_key": "fork"}, df)
+    user_buys_fork = Event(df.entry, {"user_key": "foo", "item_key": "fork"}, df)
     runtime.send(user_buys_fork, flush=True)
 
-    collected_iterator: CloseableIterator = runtime.run(run_async=True, collect=True)
+    collected_iterator: CloseableIterator = runtime.run(run_async=True, output="collect")
     records = []
 
     def wait_for_event_id(id: int) -> EventResult:
@@ -53,8 +53,8 @@ def test_two_entities():
     assert buy_fork_result.result == True
 
     # Send an event to check if the balance was updated
-    user_get_balance_node = OpNode(user_op, InvokeMethod("get_balance"))
-    user_get_balance = Event(user_get_balance_node, ["foo"], {}, None) 
+    user_get_balance_node = OpNode(User, InvokeMethod("get_balance"), read_key_from="key")
+    user_get_balance = Event(user_get_balance_node, {"key": "foo"}, None) 
     runtime.send(user_get_balance, flush=True)
 
     # See that the user's balance has gone down
@@ -63,7 +63,7 @@ def test_two_entities():
 
     # User with key "foo" buys item with key "house"
     foo_user.buy_item(house_item)
-    user_buys_house = Event(df.entry, ["foo"],  {"item_key": "house"}, df)
+    user_buys_house = Event(df.entry, {"user_key": "foo", "item_key": "house"}, df)
     runtime.send(user_buys_house, flush=True) 
 
     # Balance becomes negative when house is bought

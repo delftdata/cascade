@@ -1,6 +1,18 @@
 from typing import Any
+
 from cascade.dataflow.dataflow import DataFlow, Edge, InvokeMethod, OpNode
 from cascade.dataflow.operator import StatefulOperator
+from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
+from cascade.dataflow.optimization.dead_node_elim import is_no_op
+
+class User:
+    pass
+
+class Hotel:
+    pass
+
+class Flight:
+    pass
 
 def order_compiled_entry_0(variable_map: dict[str, Any], state: User) -> Any:
     pass
@@ -54,4 +66,38 @@ def user_order_df():
     df.entry = n0
     return df
 
-user_op.dataflows["order"] = user_order_df()
+df = user_order_df()
+user_op.dataflows[df.name] = df
+
+def test_dead_node_elim():
+    print(user_op.dataflows[df.name].to_dot())
+
+    dead_node_elimination([user_op], [])
+
+    print(user_op.dataflows[df.name].to_dot())
+
+
+
+### TEST NO OP DETECTION ###
+
+def c1(variable_map: dict[str, Any]):
+    return (variable_map["dist"], variable_map["hotel_key"])
+
+def c2(variable_map: dict[str, Any]):
+    return None
+
+def c3(variable_map: dict[str, Any]):
+    return
+
+def c4(variable_map: dict[str, Any]):
+    pass
+
+def c5(variable_map: dict[str, Any]):
+    return True
+
+def test_no_op_detect():
+    assert not is_no_op(c1)
+    assert not is_no_op(c2)
+    assert is_no_op(c3)
+    assert is_no_op(c4)
+    assert not is_no_op(c5)
