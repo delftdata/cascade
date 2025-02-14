@@ -4,12 +4,13 @@ import os
 import time
 import uuid
 import threading
+import heapq
 from typing import Any, Literal, Optional, Type, Union
 from pyflink.common.typeinfo import Types, get_gateway
 from pyflink.common import Configuration, DeserializationSchema, SerializationSchema, WatermarkStrategy
 from pyflink.datastream.connectors import DeliveryGuarantee
 from pyflink.datastream.data_stream import CloseableIterator
-from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, ValueState, ValueStateDescriptor
+from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, ValueState, ValueStateDescriptor, KeyedCoProcessFunction
 from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRecordSerializationSchema, KafkaSource, KafkaSink
 from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 import pickle 
@@ -177,6 +178,58 @@ class FlinkSelectAllOperator(KeyedProcessFunction):
         else:
             raise Exception(f"Unexpected target for SelectAllOperator: {event.target}")
 
+class FlinkBufferedPriorityQueue(KeyedCoProcessFunction):
+    """
+    """
+
+    def __init__(self) -> None:
+        self.state: ValueState = None # type: ignore (expect state to be initialised on .open())
+        self.buffer_time = 10 #ms
+        self.curTimerTimeStamp = None
+
+    def open(self, runtime_context: RuntimeContext):
+        descriptor = ValueStateDescriptor("entity-keys", Types.PICKLED_BYTE_ARRAY()) #,Types.OBJECT_ARRAY(Types.STRING()))
+        self.state: ValueState = runtime_context.get_state(descriptor)
+    
+    def process_element1(self, event: Event, ctx: 'KeyedCoProcessFunction.Context'):
+
+
+        # remove previous timer
+        curTimerTimestamp = self.curTimerTimeStamp.value()
+        if curTimerTimestamp:
+            ctx.timerService().deleteProcessingTimeTimer(curTimerTimestamp);
+
+        # curent timestamp
+        timestamp = ctx.timestamp() 
+        
+        # schedule the next timer 60 seconds from the current event time
+        ctx.timer_service().register_event_time_timer(timestamp + 60000)
+        
+        # upate cur timestampt
+        self.curTimerTimeStamp.update(timestamp)
+
+        yield event
+    
+    def process_element2(self, event: Event, ctx: 'KeyedCoProcessFunction.Context'):
+        state: list[str] = self.state.value()
+        if state is None:
+            state = []
+
+        state.append(event)
+        self.state.update(state)
+
+    def on_timer(self, timestamp: int, ctx: 'KeyedProcessFunction.OnTimerContext'):
+        # get the state for the key that scheduled the timer
+        state = self.state.value()
+        
+        # if state is emptydo not yield.
+        if not state:
+            return
+
+        # emit the state on timeout
+        for _, event in state:
+            yield from event
+
 class Result(ABC):
     """A `Result` can be either `Arrived` or `NotArrived`. It is used in the
     FlinkCollectOperator to determine whether all the events have completed 
@@ -295,6 +348,10 @@ def deserialize_and_timestamp(x) -> Event:
     e.metadata["deser_times"].append(t2 - t1)
     return e
 
+def timestamp_and_increase_priority_event(e: Event) -> Event:
+    e = timestamp_event(e)
+    return e
+
 def timestamp_event(e: Event) -> Event:
     t1 = time.time()
     try:
@@ -317,7 +374,7 @@ def debug(x, msg=""):
 
 class FlinkRuntime():
     """A Runtime that runs Dataflows on Flink."""
-    def __init__(self, input_topic="input-topic", output_topic="output-topic", ui_port: Optional[int] = None):
+    def __init__(self, input_topic_internal="input-topic-internal", input_topic_external="input-topic-external" ,output_topic="output-topic", ui_port: Optional[int] = None):
         self.env: Optional[StreamExecutionEnvironment] = None
         """@private"""
 
@@ -327,7 +384,10 @@ class FlinkRuntime():
         self.sent_events = 0
         """The number of events that were sent using `send()`."""
 
-        self.input_topic = input_topic
+        self.input_topic_internal = input_topic_internal
+        """The topic to use for internal communications."""
+        
+        self.input_topic_external = input_topic_external
         """The topic to use for internal communications."""
 
         self.output_topic = output_topic
@@ -391,10 +451,19 @@ class FlinkRuntime():
             "auto.offset.reset": "earliest", 
             "group.id": "test_group_1",
         }
-        kafka_source = (
+        kafka_source_internal = (
             KafkaSource.builder()
                 .set_bootstrap_servers(kafka_broker)
-                .set_topics(self.input_topic)
+                .set_topics(self.input_topic_internal)
+                .set_group_id("test_group_1")
+                .set_starting_offsets(KafkaOffsetsInitializer.earliest())
+                .set_value_only_deserializer(deserialization_schema)
+                .build()
+        )
+        kafka_source_external = (
+            KafkaSource.builder()
+                .set_bootstrap_servers(kafka_broker)
+                .set_topics(self.input_topic_external)
                 .set_group_id("test_group_1")
                 .set_starting_offsets(KafkaOffsetsInitializer.earliest())
                 .set_value_only_deserializer(deserialization_schema)
@@ -405,7 +474,7 @@ class FlinkRuntime():
                 .set_bootstrap_servers(kafka_broker)
                 .set_record_serializer(
                     KafkaRecordSerializationSchema.builder()
-                        .set_topic(self.input_topic)
+                        .set_topic(self.input_topic_internal)
                         .set_value_serialization_schema(deserialization_schema)
                         .build()
                     )
@@ -429,17 +498,37 @@ class FlinkRuntime():
         """Kafka sink corresponding to outputs of calls (`EventResult`s)."""
 
 
-        event_stream = (
+        event_stream_internal = (
             self.env.from_source(
-                    kafka_source, 
+                    kafka_source_internal, 
                     WatermarkStrategy.no_watermarks(),
                     "Kafka Source"
                 )
                 .map(lambda x: deserialize_and_timestamp(x))
                 # .map(lambda x: debug(x, msg=f"entry: {x}"))
-                .name("DESERIALIZE")
+                .name("DESERIALIZE internal")
                 # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
             )
+        
+        event_stream_external = (
+            self.env.from_source(
+                    kafka_source_external, 
+                    WatermarkStrategy.no_watermarks(),
+                    "Kafka Source"
+                )
+                .map(lambda x: deserialize_and_timestamp(x))
+                # .map(lambda x: debug(x, msg=f"entry: {x}"))
+                .name("DESERIALIZE external")
+                # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
+            )
+
+        event_stream = (
+            event_stream_internal.connect(
+                event_stream_external
+                )
+                .key_by(lambda x: 0, key_type=Types.INT())
+                .process(FlinkBufferedPriorityQueue())
+        )
 
         """REMOVE SELECT ALL NODES
         # Events with a `SelectAllNode` will first be processed by the select 
@@ -511,7 +600,7 @@ class FlinkRuntime():
         messages. Messages can always be sent after `init` is called - Flink 
         will continue ingesting messages after `run` is called asynchronously.
         """
-        self.producer.produce(self.input_topic, value=pickle.dumps(event))
+        self.producer.produce(self.input_topic_internal, value=pickle.dumps(event))
         if flush:
             self.producer.flush()
         self.sent_events += 1
@@ -582,7 +671,7 @@ class FlinkRuntime():
             self.env.execute("Cascade: Flink Runtime")
 
 class FlinkClientSync:
-    def __init__(self, input_topic="input-topic", output_topic="output-topic", kafka_url="localhost:9092", start_consumer_thread: bool = True):
+    def __init__(self, input_topic="input-topic-external", output_topic="output-topic", kafka_url="localhost:9092", start_consumer_thread: bool = True):
         self.producer = Producer({'bootstrap.servers': kafka_url})
         self.input_topic = input_topic
         self.output_topic = output_topic

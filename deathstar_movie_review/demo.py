@@ -101,7 +101,7 @@ bursts = 100
 
 def benchmark_runner(proc_num) -> dict[int, dict]:
     print(f'Generator: {proc_num} starting')
-    client = FlinkClientSync("ds-movie-in", "ds-movie-out")
+    client = FlinkClientSync("ds-movie-external-in", "ds-movie-out")
     deathstar_generator = deathstar_workload_generator()
     start = timer()
     
@@ -176,7 +176,7 @@ def write_dict_to_pkl(futures_dict, filename):
     df.to_pickle(filename)
 
 def main():
-    runtime = FlinkRuntime("ds-movie-in", "ds-movie-out", 8081)
+    runtime = FlinkRuntime(input_topic_external="ds-movie-external-in", output_topic="ds-movie-out", ui_port=8081)
     runtime.init(bundle_time=5, bundle_size=10)
 
     print(frontend_op.dataflow.to_dot())
