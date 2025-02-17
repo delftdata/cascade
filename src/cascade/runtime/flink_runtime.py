@@ -18,6 +18,8 @@ from cascade.dataflow.dataflow import CollectNode, CollectTarget, Event, EventRe
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from confluent_kafka import Producer, Consumer
 import logging
+from pyflink.common.watermark_strategy import TimestampAssigner
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(1)
@@ -184,51 +186,63 @@ class FlinkBufferedPriorityQueue(KeyedCoProcessFunction):
 
     def __init__(self) -> None:
         self.state: ValueState = None # type: ignore (expect state to be initialised on .open())
-        self.buffer_time = 10 #ms
-        self.curTimerTimeStamp = None
+        self.buffer_time = 1000 #ms
+        self.curTimerTimeStamp: ValueState = None
 
     def open(self, runtime_context: RuntimeContext):
-        descriptor = ValueStateDescriptor("entity-keys", Types.PICKLED_BYTE_ARRAY()) #,Types.OBJECT_ARRAY(Types.STRING()))
+        descriptor = ValueStateDescriptor("buffered-entities", Types.PICKLED_BYTE_ARRAY()) #,Types.OBJECT_ARRAY(Types.STRING()))
         self.state: ValueState = runtime_context.get_state(descriptor)
+        timestamp_descriptor = ValueStateDescriptor("timer_trigger", Types.BIG_INT()) #,Types.OBJECT_ARRAY(Types.STRING()))
+        self.curTimerTimeStamp: ValueState = runtime_context.get_state(timestamp_descriptor)
     
     def process_element1(self, event: Event, ctx: 'KeyedCoProcessFunction.Context'):
+        logger.debug(f'processing event 1: {event}')
+        current = self.state.value()
+        if current is None:
+            current = []
 
+        # update the state's count
+        current.append(event)
 
-        # remove previous timer
-        curTimerTimestamp = self.curTimerTimeStamp.value()
-        if curTimerTimestamp:
-            ctx.timerService().deleteProcessingTimeTimer(curTimerTimestamp);
+        # set the state's timestamp to the record's assigned event time timestamp
+        timestamp = ctx.timestamp()
+        advanced_time = timestamp + 10 
 
-        # curent timestamp
-        timestamp = ctx.timestamp() 
-        
-        # schedule the next timer 60 seconds from the current event time
-        ctx.timer_service().register_event_time_timer(timestamp + 60000)
-        
-        # upate cur timestampt
-        self.curTimerTimeStamp.update(timestamp)
+        # write the state back
+        self.state.update(current)
 
-        yield event
-    
-    def process_element2(self, event: Event, ctx: 'KeyedCoProcessFunction.Context'):
-        state: list[str] = self.state.value()
-        if state is None:
-            state = []
+        # schedule the next timer 6 seconds from the current event time
+        logger.debug(f'timestamp: {timestamp}')
+        ctx.timer_service().register_processing_time_timer(advanced_time)
 
-        state.append(event)
-        self.state.update(state)
+    def process_element2(self, value, ctx: 'KeyedProcessFunction.Context'):
+        logger.debug(f'processing event 2 {value}')
+        # retrieve the current count
+        current = self.state.value()
+        if current is None:
+            current = []
+
+        # update the state's count
+        current.append(value)
+
+        # set the state's timestamp to the record's assigned event time timestamp
+        timestamp = ctx.timestamp()
+
+        # write the state back
+        self.state.update(current)
+
+        # schedule the next timer 6 seconds from the current event time
+        ctx.timer_service().register_event_time_timer(timestamp + 6000)
 
     def on_timer(self, timestamp: int, ctx: 'KeyedProcessFunction.OnTimerContext'):
+        logger.debug('on_timer')
         # get the state for the key that scheduled the timer
         state = self.state.value()
-        
-        # if state is emptydo not yield.
-        if not state:
-            return
 
-        # emit the state on timeout
-        for _, event in state:
-            yield from event
+        for i in state:
+            yield i
+        
+        self.state.update([])
 
 class Result(ABC):
     """A `Result` can be either `Arrived` or `NotArrived`. It is used in the
@@ -374,7 +388,7 @@ def debug(x, msg=""):
 
 class FlinkRuntime():
     """A Runtime that runs Dataflows on Flink."""
-    def __init__(self, input_topic_internal="input-topic-internal", input_topic_external="input-topic-external" ,output_topic="output-topic", ui_port: Optional[int] = None):
+    def __init__(self, input_topic_external="input-topic-external" ,output_topic="output-topic", ui_port: Optional[int] = None):
         self.env: Optional[StreamExecutionEnvironment] = None
         """@private"""
 
@@ -384,7 +398,7 @@ class FlinkRuntime():
         self.sent_events = 0
         """The number of events that were sent using `send()`."""
 
-        self.input_topic_internal = input_topic_internal
+        self.input_topic_internal = "input-topic-internal"
         """The topic to use for internal communications."""
         
         self.input_topic_external = input_topic_external
@@ -429,7 +443,7 @@ class FlinkRuntime():
 
         # optimize for low latency
         config.set_integer("taskmanager.memory.managed.size", 0)
-        config.set_integer("execution.buffer-timeout", 0)
+        config.set_integer("execution.buffer-timeout", 1)
 
         self.env = StreamExecutionEnvironment.get_execution_environment(config)
         if parallelism:
@@ -501,7 +515,7 @@ class FlinkRuntime():
         event_stream_internal = (
             self.env.from_source(
                     kafka_source_internal, 
-                    WatermarkStrategy.no_watermarks(),
+                    WatermarkStrategy.for_monotonous_timestamps().with_timestamp_assigner(lambda event: time.time()),
                     "Kafka Source"
                 )
                 .map(lambda x: deserialize_and_timestamp(x))
@@ -513,7 +527,7 @@ class FlinkRuntime():
         event_stream_external = (
             self.env.from_source(
                     kafka_source_external, 
-                    WatermarkStrategy.no_watermarks(),
+                    WatermarkStrategy.for_monotonous_timestamps(),
                     "Kafka Source"
                 )
                 .map(lambda x: deserialize_and_timestamp(x))
@@ -526,7 +540,7 @@ class FlinkRuntime():
             event_stream_internal.connect(
                 event_stream_external
                 )
-                .key_by(lambda x: 0, key_type=Types.INT())
+                .key_by(lambda x: 0, lambda x: 0, key_type=Types.INT())
                 .process(FlinkBufferedPriorityQueue())
         )
 
