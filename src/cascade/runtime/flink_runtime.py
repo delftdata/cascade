@@ -4,7 +4,6 @@ import os
 import time
 import uuid
 import threading
-import heapq
 from typing import Any, Literal, Optional, Type, Union
 from pyflink.common.typeinfo import Types, get_gateway
 from pyflink.common import Configuration, DeserializationSchema, SerializationSchema, WatermarkStrategy
@@ -196,26 +195,13 @@ class FlinkBufferedPriorityQueue(KeyedCoProcessFunction):
         self.curTimerTimeStamp: ValueState = runtime_context.get_state(timestamp_descriptor)
     
     def process_element1(self, event: Event, ctx: 'KeyedCoProcessFunction.Context'):
-        logger.debug(f'processing event 1: {event}')
-        current = self.state.value()
-        if current is None:
-            current = []
-
-        # update the state's count
-        current.append(event)
-
-        # set the state's timestamp to the record's assigned event time timestamp
-        timestamp = ctx.timestamp()
-        advanced_time = timestamp + 10 
-
-        # write the state back
-        self.state.update(current)
-
-        # schedule the next timer 6 seconds from the current event time
-        logger.debug(f'timestamp: {timestamp}')
-        ctx.timer_service().register_processing_time_timer(advanced_time)
+        """ processes messages from internal input topic.
+        """
+        yield event
 
     def process_element2(self, value, ctx: 'KeyedProcessFunction.Context'):
+        """ Processes messages from the external input topic.
+        """
         logger.debug(f'processing event 2 {value}')
         # retrieve the current count
         current = self.state.value()
@@ -225,19 +211,19 @@ class FlinkBufferedPriorityQueue(KeyedCoProcessFunction):
         # update the state's count
         current.append(value)
 
-        # set the state's timestamp to the record's assigned event time timestamp
-        timestamp = ctx.timestamp()
-
         # write the state back
         self.state.update(current)
 
-        # schedule the next timer 6 seconds from the current event time
-        ctx.timer_service().register_event_time_timer(timestamp + 6000)
+        # schedule the next timer 10 miliseconds from the current event time
+        timeout = 10
+        per_time = 100 
+        coalesced_time = ((ctx.timestamp() + timeout) // per_time) * per_time
+        ctx.timer_service().register_processing_time_timer(coalesced_time)
 
     def on_timer(self, timestamp: int, ctx: 'KeyedProcessFunction.OnTimerContext'):
-        logger.debug('on_timer')
         # get the state for the key that scheduled the timer
         state = self.state.value()
+        logger.debug(f'on_timer, processing {len(state)} events')
 
         for i in state:
             yield i
@@ -388,7 +374,12 @@ def debug(x, msg=""):
 
 class FlinkRuntime():
     """A Runtime that runs Dataflows on Flink."""
-    def __init__(self, input_topic_external="input-topic-external" ,output_topic="output-topic", ui_port: Optional[int] = None):
+    def __init__(self, 
+                 input_topic_external="input-topic-external", 
+                 output_topic="output-topic", 
+                 ui_port: Optional[int] = None, 
+                 buffer_external_input_messages = False
+                ):
         self.env: Optional[StreamExecutionEnvironment] = None
         """@private"""
 
@@ -398,7 +389,7 @@ class FlinkRuntime():
         self.sent_events = 0
         """The number of events that were sent using `send()`."""
 
-        self.input_topic_internal = "input-topic-internal"
+        self.input_topic_internal = "input-topic-internal" if buffer_external_input_messages else input_topic_external
         """The topic to use for internal communications."""
         
         self.input_topic_external = input_topic_external
@@ -413,6 +404,8 @@ class FlinkRuntime():
         """The port to run the Flink web UI on.
 
         Warning that this does not work well with run(collect=True)!"""
+
+        self.buffer_external_input_messages = buffer_external_input_messages
 
     def init(self, kafka_broker="localhost:9092", bundle_time=1, bundle_size=5, parallelism=None):
         """Initialise & configure the Flink runtime. 
@@ -443,7 +436,7 @@ class FlinkRuntime():
 
         # optimize for low latency
         config.set_integer("taskmanager.memory.managed.size", 0)
-        config.set_integer("execution.buffer-timeout", 1)
+        config.set_integer("execution.buffer-timeout", 0)
 
         self.env = StreamExecutionEnvironment.get_execution_environment(config)
         if parallelism:
@@ -512,17 +505,6 @@ class FlinkRuntime():
         """Kafka sink corresponding to outputs of calls (`EventResult`s)."""
 
 
-        event_stream_internal = (
-            self.env.from_source(
-                    kafka_source_internal, 
-                    WatermarkStrategy.for_monotonous_timestamps().with_timestamp_assigner(lambda event: time.time()),
-                    "Kafka Source"
-                )
-                .map(lambda x: deserialize_and_timestamp(x))
-                # .map(lambda x: debug(x, msg=f"entry: {x}"))
-                .name("DESERIALIZE internal")
-                # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
-            )
         
         event_stream_external = (
             self.env.from_source(
@@ -536,13 +518,29 @@ class FlinkRuntime():
                 # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
             )
 
-        event_stream = (
-            event_stream_internal.connect(
-                event_stream_external
+        if self.buffer_external_input_messages:
+            # If external input message buffer is turned on create internal input event stream
+            # and connect the streams 
+            event_stream_internal = (
+                self.env.from_source(
+                        kafka_source_internal, 
+                        WatermarkStrategy.for_monotonous_timestamps().with_timestamp_assigner(lambda event: time.time()),
+                        "Kafka Source"
+                    )
+                    .map(lambda x: deserialize_and_timestamp(x))
+                    # .map(lambda x: debug(x, msg=f"entry: {x}"))
+                    .name("DESERIALIZE internal")
+                    # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
                 )
-                .key_by(lambda x: 0, lambda x: 0, key_type=Types.INT())
-                .process(FlinkBufferedPriorityQueue())
-        )
+            event_stream = (
+                event_stream_internal.connect(
+                    event_stream_external
+                    )
+                    .key_by(lambda x: 0, lambda x: 0, key_type=Types.INT())
+                    .process(FlinkBufferedPriorityQueue())
+            )
+        else:
+            event_stream = event_stream_external
 
         """REMOVE SELECT ALL NODES
         # Events with a `SelectAllNode` will first be processed by the select 

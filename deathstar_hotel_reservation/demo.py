@@ -343,7 +343,7 @@ def write_dict_to_pkl(futures_dict, filename):
 
 def main():
     ds = DeathstarDemo()
-    ds.init_runtime(FlinkRuntime("deathstar", "ds-out", ui_port=8081), bundle_time=5, bundle_size=10)
+    ds.init_runtime(FlinkRuntime("deathstar", "ds-out", ui_port=8081, buffer_external_input_messages=False), bundle_time=5, bundle_size=10)
     ds.runtime.run(run_async=True)
     ds.populate()
 
@@ -369,7 +369,7 @@ def main():
             print(result)
             r += 1
     print(f"{r}/{t} results recieved.")
-    write_dict_to_pkl(results, "test2.pkl")
+    write_dict_to_pkl(results, "test_without_buffering.pkl")
 
 if __name__ == "__main__":
     main()
