@@ -259,7 +259,7 @@ def user_login_workload_generator():
 
 threads = 1
 messages_per_burst = 10
-sleeps_per_burst = 1
+sleeps_per_burst = 10
 sleep_time = 0.0085
 seconds_per_burst = 1
 bursts = 50
@@ -268,7 +268,7 @@ bursts = 50
 def benchmark_runner(proc_num) -> dict[int, dict]:
     print(f'Generator: {proc_num} starting')
     client = FlinkClientSync("deathstar", "ds-out", "localhost:9092", True)
-    deathstar_generator = user_login_workload_generator()
+    deathstar_generator = reserve_workload_generator()
     start = timer()
     
     for _ in range(bursts):
@@ -361,12 +361,12 @@ def main():
     #               "timestamp": [res["timestamp"] for res in results.values()],
     #               "op": [res["op"] for res in results.values()]
     #               }).sort_values("timestamp").to_csv(f'{SAVE_DIR}/client_requests.csv', index=False)
-    print(results)
+    # print(results)
     t = len(results)
     r = 0
     for result in results.values():
         if result["ret"] is not None:
-            print(result)
+            # print(result)
             r += 1
     print(f"{r}/{t} results recieved.")
     write_dict_to_pkl(results, "test2.pkl")

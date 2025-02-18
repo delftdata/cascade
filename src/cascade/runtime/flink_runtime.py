@@ -9,7 +9,7 @@ from pyflink.common.typeinfo import Types, get_gateway
 from pyflink.common import Configuration, DeserializationSchema, SerializationSchema, WatermarkStrategy
 from pyflink.datastream.connectors import DeliveryGuarantee
 from pyflink.datastream.data_stream import CloseableIterator
-from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, ValueState, ValueStateDescriptor
+from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, ValueState, ValueStateDescriptor, ListState, ListStateDescriptor, MapStateDescriptor, MapState
 from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRecordSerializationSchema, KafkaSource, KafkaSink
 from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 import pickle 
@@ -17,6 +17,7 @@ from cascade.dataflow.dataflow import CollectNode, CollectTarget, Event, EventRe
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from confluent_kafka import Producer, Consumer
 import logging
+import collections
 
 logger = logging.getLogger(__name__)
 logger.setLevel(1)
@@ -40,6 +41,73 @@ class FlinkRegisterKeyNode(Node):
     def propogate(self, event: Event, targets: list[Node], result: Any, **kwargs) -> list[Event]:
         """A key registration event does not propogate."""
         return []
+    
+class FlinkPriorityBuffer(KeyedProcessFunction):
+    """"""
+    def __init__(self, max_concurrent_events: int) -> None:
+        self.state: ValueState = None # type: ignore (expect state to be initialised on .open())
+        self.max_concurrent_events = max_concurrent_events
+    
+    def open(self, runtime_context: RuntimeContext):
+        # descriptor = ValueStateDescriptor("state", Types.PICKLED_BYTE_ARRAY())
+        # self.state: ValueState = runtime_context.get_state(descriptor)
+        curr_processing_desc = MapStateDescriptor("currently_processing", Types.INT(), Types.INT())
+        queue_desc = ListStateDescriptor("queue", Types.PICKLED_BYTE_ARRAY())
+        num_processing_desc = ValueStateDescriptor("num_proc", Types.INT())
+        
+        self.curr_processing: MapState = runtime_context.get_map_state(curr_processing_desc)
+        self.queue: ListState = runtime_context.get_list_state(queue_desc)
+        self.num_processing: ValueState = runtime_context.get_state(num_processing_desc)
+
+    def process_element(self, event: Union[Event, EventResult], ctx: KeyedProcessFunction.Context):
+        # state = self.state.value()
+        # if state is None:
+        #     currently_processing, fifo_queue = set(), collections.deque()
+        # else:
+        #     currently_processing, fifo_queue = state
+
+        if isinstance(event, Event):
+
+            # Forward events that are in progress
+            if self.curr_processing.contains(event._id):
+                logger.debug(f"FlinkPriorityBuffer: Forwarding Event[{event._id}]")
+                yield event
+
+            else:
+                # Immediately forward events if possible, otherwise buffer
+                num_processing = self.num_processing.value()
+                if num_processing is None:
+                    num_processing = 0
+                logger.debug(f"FlinkPriorityBuffer: Buffer ({num_processing} / {self.max_concurrent_events})")
+                
+                if num_processing < self.max_concurrent_events:
+                    self.curr_processing.put(event._id, event._id)
+                    logger.debug(f"FlinkPriorityBuffer: Forwarding Event[{event._id}]")
+                    self.num_processing.update(num_processing+1)
+                    yield event
+                else:
+                    logger.debug(f"FlinkPriorityBuffer: Queueing Event[{event._id}]")
+                    self.queue.add(event)
+        else:
+            
+            queue = list(self.queue.get())
+            # try to process the next event if an EventResult was recieved
+            logger.debug(f"FlinkPriorityBuffer: Processing EventResult[{event.event_id}]")
+            try:
+                new_event = queue.pop(0)
+                logger.debug(f"FlinkPriorityBuffer: Forwarding Event[{new_event._id}]")
+                self.curr_processing.put(new_event._id, new_event._id)
+                yield new_event
+                self.queue.update(queue)
+            except IndexError:
+                self.num_processing.update(self.num_processing.value()-1)
+
+            # remove the old event_id only after adding the new id,
+            # otherwise we could process an extra event in the mean time
+            self.curr_processing.remove(event.event_id)
+
+        # self.state.update((currently_processing, fifo_queue))
+
 
 class FlinkOperator(KeyedProcessFunction):
     """Wraps an `cascade.dataflow.datflow.StatefulOperator` in a KeyedProcessFunction so that it can run in Flink.
@@ -78,20 +146,18 @@ class FlinkOperator(KeyedProcessFunction):
             # logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Registering key: {register_key_event}")
             # yield register_key_event
 
-            self.state.update(pickle.dumps(result))
+            self.state.update(result)
         elif isinstance(event.target.method_type, InvokeMethod):
             state = self.state.value()
             if state is None:
                 # try to create the state if we haven't been init'ed
                 state = self.operator.handle_init_class(*event.variable_map.values())
-            else:
-                state = pickle.loads(state)
 
             result = self.operator.handle_invoke_method(event.target.method_type, variable_map=event.variable_map, state=state)
             
             # TODO: check if state actually needs to be updated
             if state is not None:
-                self.state.update(pickle.dumps(state))
+                self.state.update(state)
         # elif isinstance(event.target.method_type, Filter):
         #     state = pickle.loads(self.state.value())
         #     result = event.target.method_type.filter_fn(event.variable_map, state)
@@ -372,6 +438,7 @@ class FlinkRuntime():
         config.set_integer("execution.buffer-timeout", 0)
 
         self.env = StreamExecutionEnvironment.get_execution_environment(config)
+        self.env.set_buffer_timeout(1)
         if parallelism:
             self.env.set_parallelism(parallelism)
         logger.debug(f"FlinkRuntime: parellelism {self.env.get_parallelism()}")
@@ -384,6 +451,8 @@ class FlinkRuntime():
             self.env.add_jars(f"file:///{kafka_jar}",f"file:///{serializer_jar}")
         else:
             self.env.add_jars(f"file://{kafka_jar}",f"file://{serializer_jar}")
+
+        max_concurrent_events = 20
 
         deserialization_schema = ByteSerializer()
         properties: dict = {
@@ -398,6 +467,19 @@ class FlinkRuntime():
                 .set_group_id("test_group_1")
                 .set_starting_offsets(KafkaOffsetsInitializer.earliest())
                 .set_value_only_deserializer(deserialization_schema)
+                .set_property("fetch.max.wait.ms", "50")
+                .set_property("max.poll.records", "50")
+                .build()
+        )
+        kafka_result_source = (
+            KafkaSource.builder()
+                .set_bootstrap_servers(kafka_broker)
+                .set_topics(self.output_topic)
+                .set_group_id("test_group_1")
+                .set_starting_offsets(KafkaOffsetsInitializer.earliest())
+                .set_value_only_deserializer(deserialization_schema)
+                .set_property("fetch.max.wait.ms", "50")
+                .set_property("max.poll.records", "50")
                 .build()
         )
         self.kafka_internal_sink = (
@@ -410,6 +492,9 @@ class FlinkRuntime():
                         .build()
                     )
                 .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                .set_property("linger.ms", "0")
+                .set_property("batch.size", "1")
+                .set_property("acks", "1")
                 .build()
         )
         """Kafka sink that will be ingested again by the Flink runtime."""
@@ -424,6 +509,9 @@ class FlinkRuntime():
                         .build()
                     )
                 .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                                .set_property("linger.ms", "0")
+                .set_property("batch.size", "16384")
+                .set_property("acks", "1")
                 .build()
         )
         """Kafka sink corresponding to outputs of calls (`EventResult`s)."""
@@ -437,8 +525,20 @@ class FlinkRuntime():
                 )
                 .map(lambda x: deserialize_and_timestamp(x))
                 # .map(lambda x: debug(x, msg=f"entry: {x}"))
-                .name("DESERIALIZE")
+                .name("DESERIALIZE EVENT")
                 # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
+            )
+        
+        result_stream = (
+            self.env.from_source(
+                    kafka_result_source, 
+                    WatermarkStrategy.no_watermarks(),
+                    "Kafka Result Source"
+                )
+                .map(lambda x: pickle.loads(x))
+                # .map(lambda x: debug(x, msg=f"entry: {x}"))
+                .name("DESERIALIZE EVENT RESULT")
+                # .filter(lambda e: isinstance(e, EventResult)) 
             )
 
         """REMOVE SELECT ALL NODES
@@ -459,6 +559,9 @@ class FlinkRuntime():
 
         operator_stream = select_all_stream.union(not_select_all_stream)
         """   
+
+        # Add priority queue
+        event_stream = event_stream.union(result_stream).key_by(lambda e: 0).process(FlinkPriorityBuffer(max_concurrent_events))
 
         self.stateful_op_stream = event_stream
         self.stateless_op_stream = event_stream
