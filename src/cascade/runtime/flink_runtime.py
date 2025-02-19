@@ -317,7 +317,7 @@ def debug(x, msg=""):
 
 class FlinkRuntime():
     """A Runtime that runs Dataflows on Flink."""
-    def __init__(self, input_topic="input-topic", output_topic="output-topic", ui_port: Optional[int] = None):
+    def __init__(self, input_topic="input-topic", output_topic="output-topic", ui_port: Optional[int] = None, internal_topic="internal-topic"):
         self.env: Optional[StreamExecutionEnvironment] = None
         """@private"""
 
@@ -328,7 +328,10 @@ class FlinkRuntime():
         """The number of events that were sent using `send()`."""
 
         self.input_topic = input_topic
-        """The topic to use for internal communications."""
+        """The topic to use read new events/requests."""
+
+        self.internal_topic = internal_topic
+        """The topic used for internal messages."""
 
         self.output_topic = output_topic
         """The topic to use for external communications, i.e. when a dataflow is
@@ -391,10 +394,19 @@ class FlinkRuntime():
             "auto.offset.reset": "earliest", 
             "group.id": "test_group_1",
         }
-        kafka_source = (
+        kafka_external_source = (
             KafkaSource.builder()
                 .set_bootstrap_servers(kafka_broker)
                 .set_topics(self.input_topic)
+                .set_group_id("test_group_1")
+                .set_starting_offsets(KafkaOffsetsInitializer.earliest())
+                .set_value_only_deserializer(deserialization_schema)
+                .build()
+        )
+        kafka_internal_source = (
+            KafkaSource.builder()
+                .set_bootstrap_servers(kafka_broker)
+                .set_topics(self.internal_topic)
                 .set_group_id("test_group_1")
                 .set_starting_offsets(KafkaOffsetsInitializer.earliest())
                 .set_value_only_deserializer(deserialization_schema)
@@ -405,7 +417,7 @@ class FlinkRuntime():
                 .set_bootstrap_servers(kafka_broker)
                 .set_record_serializer(
                     KafkaRecordSerializationSchema.builder()
-                        .set_topic(self.input_topic)
+                        .set_topic(self.internal_topic)
                         .set_value_serialization_schema(deserialization_schema)
                         .build()
                     )
@@ -428,17 +440,26 @@ class FlinkRuntime():
         )
         """Kafka sink corresponding to outputs of calls (`EventResult`s)."""
 
-
         event_stream = (
-            self.env.from_source(
-                    kafka_source, 
+                self.env.from_source(
+                    kafka_external_source, 
                     WatermarkStrategy.no_watermarks(),
-                    "Kafka Source"
+                    "Kafka External Source"
                 )
                 .map(lambda x: deserialize_and_timestamp(x))
                 # .map(lambda x: debug(x, msg=f"entry: {x}"))
-                .name("DESERIALIZE")
+                .name("DESERIALIZE external")
+                .set_parallelism(2)
                 # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
+            ).union(
+                self.env.from_source(
+                    kafka_internal_source, 
+                    WatermarkStrategy.no_watermarks(),
+                    "Kafka External Source"
+                )
+                .map(lambda x: deserialize_and_timestamp(x))
+                .name("DESERIALIZE internal")
+                .set_parallelism(4)
             )
 
         """REMOVE SELECT ALL NODES
