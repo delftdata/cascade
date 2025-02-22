@@ -14,14 +14,20 @@ from timeit import default_timer as timer
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from cascade.dataflow.dataflow import Event, EventResult, InitClass, OpNode
-from cascade.runtime.flink_runtime import FlinkClientSync, FlinkRuntime
-from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
+from cascade.runtime.flink_runtime import FlinkClientSync
+ 
+from .entities.user import User
+from .entities.frontend import frontend_op
+from .entities.movie import MovieInfo, Plot, MovieId
 
-from .entities.user import user_op, User
-from .entities.compose_review import compose_review_op
-from .entities.frontend import frontend_op, text_op, unique_id_op
-from .entities.movie import MovieInfo, movie_id_op, movie_info_op, plot_op, Plot, MovieId
-
+IN_TOPIC = "ds-movie-in"
+OUT_TOPIC = "ds-movie-out"
+# threads = 1
+messages_per_burst = 10
+sleeps_per_burst = 10
+sleep_time = 0.08 
+seconds_per_burst = 1
+bursts = 100
 
 def populate_user(client: FlinkClientSync):
     init_user = OpNode(User, InitClass(), read_key_from="username")
@@ -91,21 +97,14 @@ def deathstar_workload_generator():
         yield compose_review(c)
         c += 1
 
-threads = 1
-messages_per_burst = 10
-sleeps_per_burst = 10
-sleep_time = 0.08 #0.0085
-seconds_per_burst = 1
-bursts = 100
-
 
 def benchmark_runner(proc_num) -> dict[int, dict]:
     print(f'Generator: {proc_num} starting')
-    client = FlinkClientSync("ds-movie-in", "ds-movie-out")
+    client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
     deathstar_generator = deathstar_workload_generator()
     start = timer()
     
-    for _ in range(bursts):
+    for b in range(bursts):
         sec_start = timer()
 
         # send burst of messages
@@ -125,11 +124,15 @@ def benchmark_runner(proc_num) -> dict[int, dict]:
         if lps < seconds_per_burst:
             time.sleep(1 - lps)
         sec_end2 = timer()
-        print(f'Latency per burst: {sec_end2 - sec_start} ({seconds_per_burst})')
+        print(f'Latency per burst: {sec_end2 - sec_start} ({b+1}/{bursts})')
         
     end = timer()
     print(f'Average latency per burst: {(end - start) / bursts} ({seconds_per_burst})')
-    
+    futures = wait_for_futures(client)
+    client.close()
+    return futures
+
+def wait_for_futures(client: FlinkClientSync):   
     done = False
     while not done:
         done = True
@@ -140,7 +143,6 @@ def benchmark_runner(proc_num) -> dict[int, dict]:
                 time.sleep(0.5)
                 break
     futures = client._futures
-    client.close()
     return futures
 
 
@@ -173,17 +175,25 @@ def write_dict_to_pkl(futures_dict, filename):
 
     # Create a DataFrame and save it as a pickle file
     df = pd.DataFrame(data)
+    
+    # Multiply flink_time by 1000 to convert to milliseconds
+    df['flink_time'] = df['flink_time'] * 1000
+
     df.to_pickle(filename)
+    return df
 
 def main():
-    client = FlinkClientSync("ds-movie-in", "ds-movie-out")
+    init_client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
 
-    populate_user(client)
-    populate_movie(client)
-    client.producer.flush()
+    print("Populating...")
+    populate_user(init_client)
+    populate_movie(init_client)
+    init_client.producer.flush()
+    wait_for_futures(init_client)
+    print("Done.")
     time.sleep(1)
 
-    input()
+    input("Press enter to start benchmark")
 
     # with Pool(threads) as p:
     #     results = p.map(benchmark_runner, range(threads))
@@ -197,11 +207,20 @@ def main():
     r = 0
     for result in results.values():
         if result["ret"] is not None:
-            print(result)
+            # print(result)
             r += 1
+
     print(f"{r}/{t} results recieved.")
-    write_dict_to_pkl(results, "test2.pkl")
-    client.close()
+    print("Writing results to benchmark_results.pkl")
+
+    df = write_dict_to_pkl(results, "benchmark_results.pkl")
+
+    flink_time = df['flink_time'].median()
+    latency = df['latency'].median()
+    flink_prct = float(flink_time) * 100 / latency
+    print(f"Median latency    : {latency:.2f} ms")
+    print(f"Median Flink time : {flink_time:.2f} ms ({flink_prct:.2f}%)")
+    init_client.close()
 
 if __name__ == "__main__":
     main()

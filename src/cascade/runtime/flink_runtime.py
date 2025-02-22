@@ -7,7 +7,6 @@ import threading
 from typing import Any, Literal, Optional, Type, Union
 from pyflink.common.typeinfo import Types, get_gateway
 from pyflink.common import Configuration, DeserializationSchema, SerializationSchema, WatermarkStrategy
-from pyflink.datastream.connectors import DeliveryGuarantee
 from pyflink.datastream.data_stream import CloseableIterator
 from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, ValueState, ValueStateDescriptor
 from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRecordSerializationSchema, KafkaSource, KafkaSink
@@ -24,6 +23,9 @@ console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
+
+# Required if SelectAll nodes are used
+SELECT_ALL_ENABLED = False
 
 @dataclass
 class FlinkRegisterKeyNode(Node):
@@ -69,14 +71,15 @@ class FlinkOperator(KeyedProcessFunction):
             result = self.operator.handle_init_class(*event.variable_map.values())
 
             # Register the created key in FlinkSelectAllOperator
-            # register_key_event = Event(
-            #     FlinkRegisterKeyNode(key, self.operator.entity),
-            #     {},
-            #     None,
-            #     _id = event._id
-            # )
-            # logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Registering key: {register_key_event}")
-            # yield register_key_event
+            if SELECT_ALL_ENABLED:
+                register_key_event = Event(
+                    FlinkRegisterKeyNode(key, self.operator.entity),
+                    {},
+                    None,
+                    _id = event._id
+                )
+                logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Registering key: {register_key_event}")
+                yield register_key_event
 
             self.state.update(pickle.dumps(result))
         elif isinstance(event.target.method_type, InvokeMethod):
@@ -92,6 +95,7 @@ class FlinkOperator(KeyedProcessFunction):
             # TODO: check if state actually needs to be updated
             if state is not None:
                 self.state.update(pickle.dumps(state))
+        # Filter targets are used in cases of [hotel for hotel in Hotel.__all__() *if hotel....*]
         # elif isinstance(event.target.method_type, Filter):
         #     state = pickle.loads(self.state.value())
         #     result = event.target.method_type.filter_fn(event.variable_map, state)
@@ -321,9 +325,6 @@ class FlinkRuntime():
         self.env: Optional[StreamExecutionEnvironment] = None
         """@private"""
 
-        self.producer: Producer = None
-        """@private"""
-
         self.sent_events = 0
         """The number of events that were sent using `send()`."""
 
@@ -378,9 +379,10 @@ class FlinkRuntime():
         kafka_jar = os.path.join(os.path.abspath(os.path.dirname(__file__)),
         'bin/flink-sql-connector-kafka-3.3.0-1.20.jar')
         serializer_jar = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'bin/flink-kafka-bytes-serializer.jar')
+        flink_jar = "/home/lvanmol/flink-1.20.1/opt/flink-python-1.20.1.jar"
         
-        # https://issues.apache.org/jira/browse/FLINK-36457q
-        config.set_string("pipeline.jars",f"file:///home/lvanmol/flink-1.20.1/opt/flink-python-1.20.1.jar;file://{kafka_jar};file://{serializer_jar}")
+        # Add the required jars https://issues.apache.org/jira/browse/FLINK-36457q
+        config.set_string("pipeline.jars",f"file://{flink_jar};file://{kafka_jar};file://{serializer_jar}")
 
         self.env = StreamExecutionEnvironment.get_execution_environment(config)
         if parallelism:
@@ -388,18 +390,8 @@ class FlinkRuntime():
         logger.debug(f"FlinkRuntime: parellelism {self.env.get_parallelism()}")
 
 
-        if os.name == 'nt':
-            self.env.add_jars(f"file:///{kafka_jar}",f"file:///{serializer_jar}")
-        else:
-            pass
-            # self.env.add_jars(f"file://{kafka_jar}",f"file://{serializer_jar}")
-
         deserialization_schema = ByteSerializer()
-        properties: dict = {
-            "bootstrap.servers": kafka_broker,
-            "auto.offset.reset": "earliest", 
-            "group.id": "test_group_1",
-        }
+
         kafka_external_source = (
             KafkaSource.builder()
                 .set_bootstrap_servers(kafka_broker)
@@ -427,7 +419,6 @@ class FlinkRuntime():
                         .set_value_serialization_schema(deserialization_schema)
                         .build()
                     )
-                # .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build()
         )
         """Kafka sink that will be ingested again by the Flink runtime."""
@@ -441,7 +432,6 @@ class FlinkRuntime():
                         .set_value_serialization_schema(deserialization_schema)
                         .build()
                     )
-                # .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build()
         )
         """Kafka sink corresponding to outputs of calls (`EventResult`s)."""
@@ -453,7 +443,6 @@ class FlinkRuntime():
                     "Kafka External Source"
                 )
                 .map(lambda x: deserialize_and_timestamp(x))
-                # .map(lambda x: debug(x, msg=f"entry: {x}"))
                 .name("DESERIALIZE external")
                 # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
             ).union(
@@ -466,42 +455,32 @@ class FlinkRuntime():
                 .name("DESERIALIZE internal")
             )
 
-        """REMOVE SELECT ALL NODES
         # Events with a `SelectAllNode` will first be processed by the select 
         # all operator, which will send out multiple other Events that can
         # then be processed by operators in the same steam.
-        select_all_stream = (
-            event_stream.filter(lambda e: 
-                    isinstance(e.target, SelectAllNode) or isinstance(e.target, FlinkRegisterKeyNode))
-                .key_by(lambda e: e.target.cls)
-                .process(FlinkSelectAllOperator()).name("SELECT ALL OP")
-        )
-        # Stream that ingests events with an `SelectAllNode` or `FlinkRegisterKeyNode`
-        not_select_all_stream = (
-            event_stream.filter(lambda e:
-                    not (isinstance(e.target, SelectAllNode) or isinstance(e.target, FlinkRegisterKeyNode)))
-        )
+        if SELECT_ALL_ENABLED:
+            select_all_stream = (
+                event_stream.filter(lambda e: 
+                        isinstance(e.target, SelectAllNode) or isinstance(e.target, FlinkRegisterKeyNode))
+                    .key_by(lambda e: e.target.cls)
+                    .process(FlinkSelectAllOperator()).name("SELECT ALL OP")
+            )
+            # Stream that ingests events with an `SelectAllNode` or `FlinkRegisterKeyNode`
+            not_select_all_stream = (
+                event_stream.filter(lambda e:
+                        not (isinstance(e.target, SelectAllNode) or isinstance(e.target, FlinkRegisterKeyNode)))
+            )
 
-        operator_stream = select_all_stream.union(not_select_all_stream)
-        """   
+            event_stream = select_all_stream.union(not_select_all_stream)
 
         self.stateful_op_stream = event_stream
         self.stateless_op_stream = event_stream
 
-        # MOVED TO END OF OP STREAMS!
-        # self.merge_op_stream = (
-        #     event_stream.filter(lambda e: isinstance(e.target, CollectNode))
-        #         .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
-        #         .process(FlinkCollectOperator())
-        #         .name("Collect")
-        # )
-        # """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 
         self.stateless_op_streams = []
         self.stateful_op_streams = []
         """List of stateful operator streams, which gets appended at `add_operator`."""
 
-        self.producer = Producer({'bootstrap.servers': kafka_broker})
         logger.debug("FlinkRuntime initialized")
     
     def add_operator(self, op: StatefulOperator):
@@ -510,10 +489,8 @@ class FlinkRuntime():
 
         op_stream = (
             self.stateful_op_stream.filter(lambda e: isinstance(e.target, OpNode) and e.target.entity == flink_op.operator.entity)
-                # .map(lambda x: debug(x, msg=f"filtered op: {op.entity}"))
                 .key_by(lambda e: e.variable_map[e.target.read_key_from])
                 .process(flink_op)
-                # .map(lambda x: debug(x, msg=f"processed op: {op.entity}"))
                 .name("STATEFUL OP: " + flink_op.operator.entity.__name__)
             )
         self.stateful_op_streams.append(op_stream)
@@ -530,17 +507,6 @@ class FlinkRuntime():
             )
         self.stateless_op_streams.append(op_stream)
 
-    def send(self, event: Event, flush=False):
-        """Send an event to the Kafka source.
-        Once `run` has been called, the Flink runtime will start ingesting these 
-        messages. Messages can always be sent after `init` is called - Flink 
-        will continue ingesting messages after `run` is called asynchronously.
-        """
-        self.producer.produce(self.input_topic, value=pickle.dumps(event))
-        if flush:
-            self.producer.flush()
-        self.sent_events += 1
-
     def run(self, run_async=False, output: Literal["collect", "kafka", "stdout"]="kafka") -> Union[CloseableIterator, None]:
         """Start ingesting and processing messages from the Kafka source.
         
@@ -551,10 +517,16 @@ class FlinkRuntime():
         logger.debug("FlinkRuntime merging operator streams...")
 
         # Combine all the operator streams
-        # operator_streams = self.merge_op_stream.union(*self.stateful_op_streams[1:], *self.stateless_op_streams)#.map(lambda x: debug(x, msg="combined ops"))
-        s1 = self.stateful_op_streams[0]
-        rest = self.stateful_op_streams[1:]
-        operator_streams = s1.union(*rest, *self.stateless_op_streams)#.map(lambda x: debug(x, msg="combined ops"))
+        if len(self.stateful_op_streams) >= 1:
+            s1 = self.stateful_op_streams[0]
+            rest = self.stateful_op_streams[1:]
+            operator_streams = s1.union(*rest, *self.stateless_op_streams)
+        elif len(self.stateless_op_streams) >= 1:
+            s1 = self.stateless_op_streams[0]
+            rest = self.stateless_op_streams[1:]
+            operator_streams = s1.union(*rest, *self.stateful_op_streams)
+        else:
+            raise RuntimeError("No operators found, were they added to the flink runtime with .add_*_operator()")
 
         merge_op_stream = (
             operator_streams.filter(lambda e: isinstance(e, Event) and isinstance(e.target, CollectNode))
@@ -564,20 +536,6 @@ class FlinkRuntime():
         )
         """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 
-        
-        """
-        # Add filtering for nodes with a `Filter` target
-        full_stream_filtered = (
-            operator_streams
-                .filter(lambda e: isinstance(e, Event) and isinstance(e.target, Filter))
-                .filter(lambda e: e.target.filter_fn())    
-        )
-        full_stream_unfiltered = (
-            operator_streams
-                .filter(lambda e: not (isinstance(e, Event) and isinstance(e.target, Filter)))
-        )
-        ds = full_stream_filtered.union(full_stream_unfiltered)
-        """
         # union with EventResults or Events that don't have a CollectNode target
         ds = merge_op_stream.union(operator_streams.filter(lambda e: not (isinstance(e, Event) and isinstance(e.target, CollectNode))))
 

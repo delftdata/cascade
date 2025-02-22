@@ -58,7 +58,7 @@ flink run --pyFiles /path/to/cascade/src,/path/to/cascade --pyModule deathstar_m
 ```
 
 Once the job is submitted, you can start the benchmark. Open another terminal in
-the same directory and run:
+the same directory (and conda environment) and run:
 
 ```
 python -m deathstar_movie_review.start_benchmark
