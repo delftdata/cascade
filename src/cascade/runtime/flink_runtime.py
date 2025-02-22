@@ -371,22 +371,28 @@ class FlinkRuntime():
         config.set_integer("python.fn-execution.bundle.size", bundle_size)
 
         # optimize for low latency
-        config.set_integer("taskmanager.memory.managed.size", 0)
-        config.set_integer("execution.buffer-timeout", 0)
+        # config.set_integer("taskmanager.memory.managed.size", 0)
+        config.set_integer("execution.buffer-timeout", 5)
+        
+        
+        kafka_jar = os.path.join(os.path.abspath(os.path.dirname(__file__)),
+        'bin/flink-sql-connector-kafka-3.3.0-1.20.jar')
+        serializer_jar = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'bin/flink-kafka-bytes-serializer.jar')
+        
+        # https://issues.apache.org/jira/browse/FLINK-36457q
+        config.set_string("pipeline.jars",f"file:///home/lvanmol/flink-1.20.1/opt/flink-python-1.20.1.jar;file://{kafka_jar};file://{serializer_jar}")
 
         self.env = StreamExecutionEnvironment.get_execution_environment(config)
         if parallelism:
             self.env.set_parallelism(parallelism)
         logger.debug(f"FlinkRuntime: parellelism {self.env.get_parallelism()}")
 
-        kafka_jar = os.path.join(os.path.abspath(os.path.dirname(__file__)),
-        'bin/flink-sql-connector-kafka-3.3.0-1.20.jar')
-        serializer_jar = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'bin/flink-kafka-bytes-serializer.jar')
 
         if os.name == 'nt':
             self.env.add_jars(f"file:///{kafka_jar}",f"file:///{serializer_jar}")
         else:
-            self.env.add_jars(f"file://{kafka_jar}",f"file://{serializer_jar}")
+            pass
+            # self.env.add_jars(f"file://{kafka_jar}",f"file://{serializer_jar}")
 
         deserialization_schema = ByteSerializer()
         properties: dict = {
@@ -421,7 +427,7 @@ class FlinkRuntime():
                         .set_value_serialization_schema(deserialization_schema)
                         .build()
                     )
-                .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                # .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build()
         )
         """Kafka sink that will be ingested again by the Flink runtime."""
@@ -435,7 +441,7 @@ class FlinkRuntime():
                         .set_value_serialization_schema(deserialization_schema)
                         .build()
                     )
-                .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                # .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build()
         )
         """Kafka sink corresponding to outputs of calls (`EventResult`s)."""
@@ -449,7 +455,6 @@ class FlinkRuntime():
                 .map(lambda x: deserialize_and_timestamp(x))
                 # .map(lambda x: debug(x, msg=f"entry: {x}"))
                 .name("DESERIALIZE external")
-                .set_parallelism(2)
                 # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
             ).union(
                 self.env.from_source(
@@ -459,7 +464,6 @@ class FlinkRuntime():
                 )
                 .map(lambda x: deserialize_and_timestamp(x))
                 .name("DESERIALIZE internal")
-                .set_parallelism(4)
             )
 
         """REMOVE SELECT ALL NODES
