@@ -9,7 +9,6 @@ import sys
 import os
 from timeit import default_timer as timer
 
-
 # import cascade
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
@@ -193,7 +192,7 @@ def main():
     print("Done.")
     time.sleep(1)
 
-    input("Press enter to start benchmark")
+    print("Starting benchmark")
 
     # with Pool(threads) as p:
     #     results = p.map(benchmark_runner, range(threads))

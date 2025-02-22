@@ -1,8 +1,10 @@
+from typing import Literal
+from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
 from cascade.runtime.flink_runtime import FlinkRuntime
 
 from .entities.user import user_op
 from .entities.compose_review import compose_review_op
-from .entities.frontend import frontend_op, text_op, unique_id_op
+from .entities.frontend import frontend_df_parallel, frontend_df_serial, frontend_op, text_op, unique_id_op
 from .entities.movie import movie_id_op, movie_info_op, plot_op
 
 
@@ -14,6 +16,8 @@ KAFKA_FLINK_BROKER = "kafka:9093" # If running a flink cluster and kafka inside 
 IN_TOPIC = "ds-movie-in"
 OUT_TOPIC = "ds-movie-out"
 INTERNAL_TOPIC = "ds-movie-internal"
+
+EXPERIMENT: Literal["baseline", "pipelined", "parallel"] = "baseline"
 
 def create_topics(*required_topics):
     conf = {
@@ -54,9 +58,16 @@ def main():
     runtime = FlinkRuntime(IN_TOPIC, OUT_TOPIC, internal_topic=INTERNAL_TOPIC)
     runtime.init(kafka_broker=KAFKA_FLINK_BROKER,bundle_time=5, bundle_size=10)
 
-    # dead_node_elimination([], [frontend_op])
-    print("Creating dataflow:")
+    if EXPERIMENT == "baseline":
+        frontend_op.dataflow = frontend_df_serial()
+    elif EXPERIMENT == "pipelined":
+        frontend_op.dataflow = frontend_df_serial()
+        dead_node_elimination([], [frontend_op])
+    elif EXPERIMENT == "parallel":
+        frontend_op.dataflow = frontend_df_parallel()
+
     print(frontend_op.dataflow.to_dot())
+    print(f"Creating dataflow [{EXPERIMENT}]")
 
     runtime.add_operator(compose_review_op)
     runtime.add_operator(user_op)

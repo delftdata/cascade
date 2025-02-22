@@ -57,6 +57,12 @@ parallelism desired:
 flink run --pyFiles /path/to/cascade/src,/path/to/cascade --pyModule deathstar_movie_review.demo -p X
 ```
 
+> This command runs `FlinkRuntime.init`, which requires the location of a 
+> flink-python jarfile.
+> The location is currently hardcoded in `src/cascade/runtime/flink_runtime` and 
+> should be changed based on your environment. The jar file is included as part
+> of the flink installation itself, at https://flink.apache.org/downloads/ (1.20.1).
+
 Once the job is submitted, you can start the benchmark. Open another terminal in
 the same directory (and conda environment) and run:
 
