@@ -8,6 +8,7 @@ from .workload_data import movie_titles, charset
 import sys
 import os
 from timeit import default_timer as timer
+import argparse
 
 # import cascade
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
@@ -22,11 +23,11 @@ from .entities.movie import MovieInfo, Plot, MovieId
 IN_TOPIC = "ds-movie-in"
 OUT_TOPIC = "ds-movie-out"
 # threads = 1
-messages_per_burst = 10
-sleeps_per_burst = 10
-sleep_time = 0.08 
-seconds_per_burst = 1
-bursts = 100
+# messages_per_burst = 10
+# sleeps_per_burst = 10
+# sleep_time = 0.08 
+# seconds_per_burst = 1
+# bursts = 100
 
 def populate_user(client: FlinkClientSync):
     init_user = OpNode(User, InitClass(), read_key_from="username")
@@ -97,7 +98,7 @@ def deathstar_workload_generator():
         c += 1
 
 
-def benchmark_runner(proc_num) -> dict[int, dict]:
+def benchmark_runner(proc_num, messages_per_burst, sleeps_per_burst, sleep_time, seconds_per_burst, bursts) -> dict[int, dict]:
     print(f'Generator: {proc_num} starting')
     client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
     deathstar_generator = deathstar_workload_generator()
@@ -182,6 +183,17 @@ def write_dict_to_pkl(futures_dict, filename):
     return df
 
 def main():
+    parser = argparse.ArgumentParser(description="Run the benchmark and save results.")
+    parser.add_argument("-o", "--output", type=str, default="benchmark_results.pkl", help="Output file name for the results")
+    parser.add_argument("--messages_per_burst", type=int, default=10, help="Number of messages per burst")
+    parser.add_argument("--sleeps_per_burst", type=int, default=10, help="Number of sleep cycles per burst")
+    parser.add_argument("--sleep_time", type=float, default=0.08, help="Sleep time between messages")
+    parser.add_argument("--seconds_per_burst", type=int, default=1, help="Seconds per burst")
+    parser.add_argument("--bursts", type=int, default=100, help="Number of bursts")
+    args = parser.parse_args()
+    
+    print(f"Starting with args:\n{args}")
+
     init_client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
 
     print("Populating...")
@@ -198,7 +210,7 @@ def main():
     #     results = p.map(benchmark_runner, range(threads))
 
     # results = {k: v for d in results for k, v in d.items()}
-    results = benchmark_runner(0)
+    results = benchmark_runner(0, args.messages_per_burst, args.sleeps_per_burst, args.sleep_time, args.seconds_per_burst, args.bursts)
 
     print("last result:")
     print(list(results.values())[-1])
@@ -210,9 +222,9 @@ def main():
             r += 1
 
     print(f"{r}/{t} results recieved.")
-    print("Writing results to benchmark_results.pkl")
+    print(f"Writing results to {args.output}")
 
-    df = write_dict_to_pkl(results, "benchmark_results.pkl")
+    df = write_dict_to_pkl(results, args.output)
 
     flink_time = df['flink_time'].median()
     latency = df['latency'].median()

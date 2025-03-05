@@ -7,7 +7,7 @@ from .entities.compose_review import compose_review_op
 from .entities.frontend import frontend_df_parallel, frontend_df_serial, frontend_op, text_op, unique_id_op
 from .entities.movie import movie_id_op, movie_info_op, plot_op
 
-
+import os
 from confluent_kafka.admin import AdminClient, NewTopic
 
 KAFKA_BROKER = "localhost:9092"
@@ -17,7 +17,7 @@ IN_TOPIC = "ds-movie-in"
 OUT_TOPIC = "ds-movie-out"
 INTERNAL_TOPIC = "ds-movie-internal"
 
-EXPERIMENT: Literal["baseline", "pipelined", "parallel"] = "baseline"
+EXPERIMENT: Literal["baseline", "pipelined", "parallel"] = os.getenv("EXPERIMENT", "baseline")
 
 def create_topics(*required_topics):
     conf = {
