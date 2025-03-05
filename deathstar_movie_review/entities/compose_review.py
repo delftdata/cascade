@@ -1,6 +1,6 @@
 from typing import Any
 
-from src.cascade.dataflow.operator import StatefulOperator
+from cascade.dataflow.operator import StatefulOperator
 
 
 class ComposeReview:

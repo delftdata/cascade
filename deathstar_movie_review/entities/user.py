@@ -1,7 +1,7 @@
 from typing import Any
 from deathstar_movie_review.entities.compose_review import ComposeReview
-from src.cascade.dataflow.dataflow import DataFlow, Edge, InvokeMethod, OpNode
-from src.cascade.dataflow.operator import StatefulOperator
+from cascade.dataflow.dataflow import DataFlow, Edge, InvokeMethod, OpNode
+from cascade.dataflow.operator import StatefulOperator
 
 
 class User:
