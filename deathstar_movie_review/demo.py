@@ -57,6 +57,8 @@ def main():
 
     runtime = FlinkRuntime(IN_TOPIC, OUT_TOPIC, internal_topic=INTERNAL_TOPIC)
     runtime.init(kafka_broker=KAFKA_FLINK_BROKER,bundle_time=5, bundle_size=10)
+       
+    print(f"Creating dataflow [{EXPERIMENT}]")
 
     if EXPERIMENT == "baseline":
         frontend_op.dataflow = frontend_df_serial()
@@ -65,9 +67,8 @@ def main():
         dead_node_elimination([], [frontend_op])
     elif EXPERIMENT == "parallel":
         frontend_op.dataflow = frontend_df_parallel()
-
-    print(frontend_op.dataflow.to_dot())
-    print(f"Creating dataflow [{EXPERIMENT}]")
+    else:
+        raise RuntimeError(f"EXPERIMENT is not set correctly: {EXPERIMENT}")
 
     runtime.add_operator(compose_review_op)
     runtime.add_operator(user_op)

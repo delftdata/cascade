@@ -1,8 +1,10 @@
-from typing import Any
+import os
+from typing import Any, Literal
 import uuid
 
 from cascade.dataflow.dataflow import CollectNode, CollectTarget, DataFlow, Edge, InvokeMethod, OpNode, StatelessOpNode
 from cascade.dataflow.operator import StatelessOperator
+from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
 from deathstar_movie_review.entities.compose_review import ComposeReview
 from deathstar_movie_review.entities.movie import MovieId
 from deathstar_movie_review.entities.user import User

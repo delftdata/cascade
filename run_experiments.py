@@ -10,6 +10,13 @@ args = {
     "bursts": 100
 }
 
+mps_1 = {
+    **args,
+    "messages_per_burst": 1,
+    "sleeps_per_burst": 1,
+    "sleep_time": 0.8,
+}
+
 mps_20 = { 
     **args, 
     "messages_per_burst": 20,
@@ -26,26 +33,39 @@ mps_50 = {
 
 # Define experiment parameters as a list of dictionaries
 experiments = [
+    {"parallelism": 16, "benchmark_args": {**mps_1}},
     {"parallelism": 16, "benchmark_args": {**args}},
-    {"parallelism": 16, "benchmark_args": {**mps_20}},
-    {"parallelism": 16, "benchmark_args": {**mps_50}},
 
+    {"parallelism": 8, "benchmark_args": {**mps_1}},
     {"parallelism": 8, "benchmark_args": {**args}},
-    {"parallelism": 8, "benchmark_args": {**mps_20}},
 
-    {"parallelism": 4, "benchmark_args": {**mps_20}},
+    {"parallelism": 4, "benchmark_args": {**mps_1}},
     {"parallelism": 4, "benchmark_args": {**args}},
 
+    {"parallelism": 2, "benchmark_args": {**mps_1}},
     {"parallelism": 2, "benchmark_args": {**args}},
-    {"parallelism": 2, "benchmark_args": {**mps_20}},
-
+    
+    {"parallelism": 1, "benchmark_args": {**mps_1}},
     {"parallelism": 1, "benchmark_args": {**args}},
-    {"parallelism": 1, "benchmark_args": {**mps_20}},
+    # {"parallelism": 16, "benchmark_args": {**mps_20}},
+    # {"parallelism": 16, "benchmark_args": {**mps_50}},
 
-    {"parallelism": 8, "benchmark_args": {**mps_50}},
-    {"parallelism": 4, "benchmark_args": {**mps_50}},
-    {"parallelism": 2, "benchmark_args": {**mps_50}},
-    {"parallelism": 1, "benchmark_args": {**mps_50}},
+    # {"parallelism": 8, "benchmark_args": {**args}},
+    # {"parallelism": 8, "benchmark_args": {**mps_20}},
+
+    # {"parallelism": 4, "benchmark_args": {**mps_20}},
+    # {"parallelism": 4, "benchmark_args": {**args}},
+
+    # {"parallelism": 2, "benchmark_args": {**args}},
+    # {"parallelism": 2, "benchmark_args": {**mps_20}},
+
+    # {"parallelism": 1, "benchmark_args": {**args}},
+    # {"parallelism": 1, "benchmark_args": {**mps_20}},
+
+    # {"parallelism": 8, "benchmark_args": {**mps_50}},
+    # {"parallelism": 4, "benchmark_args": {**mps_50}},
+    # {"parallelism": 2, "benchmark_args": {**mps_50}},
+    # {"parallelism": 1, "benchmark_args": {**mps_50}},
 ]
 
 
@@ -54,7 +74,7 @@ experiments = [
 print("Tearing down docker containers")
 subprocess.run(["docker", "compose", "down"], check=True)
 
-for e in ["parallel", "base", "piplined"]:
+for e in ["pipelined", "parallel", "baseline"]:
     for exp in experiments:
         print(f"Starting experiment {exp}")
         
@@ -74,9 +94,9 @@ for e in ["parallel", "base", "piplined"]:
         subprocess.run(flink_cmd, check=True, env=env)
         
         # Start benchmark
-        filename = f"{e}_p-{exp['parallelism']}_mps-{exp['benchmark_args']['messages_per_burst']}.plk"
+        filename = f"{e}_p-{exp['parallelism']}_mps-{exp['benchmark_args']['messages_per_burst']}.pkl"
         benchmark_cmd = [
-            "python", "-u", "-m", "deathstar_movie_review.start_benchmark", "--output", filename
+            "python", "-u", "-m", "deathstar_movie_review.start_benchmark", "--output", filename, "--experiment", e
         ]
 
         for arg, val in exp['benchmark_args'].items():

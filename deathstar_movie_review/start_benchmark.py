@@ -1,8 +1,10 @@
 import hashlib
 import time
+from typing import Literal
 import uuid
 import pandas as pd
 import random
+
 from .movie_data import movie_data
 from .workload_data import movie_titles, charset
 import sys
@@ -13,11 +15,12 @@ import argparse
 # import cascade
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
+from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
 from cascade.dataflow.dataflow import Event, EventResult, InitClass, OpNode
 from cascade.runtime.flink_runtime import FlinkClientSync
  
 from .entities.user import User
-from .entities.frontend import frontend_op
+from .entities.frontend import frontend_df_parallel, frontend_df_serial, frontend_op
 from .entities.movie import MovieInfo, Plot, MovieId
 
 IN_TOPIC = "ds-movie-in"
@@ -75,7 +78,7 @@ def populate_movie(client: FlinkClientSync):
         client.send(event)
 
 
-def compose_review(req_id):
+def compose_review(req_id, op):
     user_index = random.randint(0, 999)
     username = f"username_{user_index}"
     password = f"password_{user_index}"
@@ -83,7 +86,7 @@ def compose_review(req_id):
     rating = random.randint(0, 10)
     text = ''.join(random.choice(charset) for _ in range(256))
     
-    return frontend_op.dataflow.generate_event({
+    return op.dataflow.generate_event({
             "review": req_id,
             "user": username,
             "title": title,
@@ -91,17 +94,17 @@ def compose_review(req_id):
             "text": text
         })
 
-def deathstar_workload_generator():
+def deathstar_workload_generator(op):
     c = 1
     while True:
-        yield compose_review(c)
+        yield compose_review(c, op)
         c += 1
 
 
-def benchmark_runner(proc_num, messages_per_burst, sleeps_per_burst, sleep_time, seconds_per_burst, bursts) -> dict[int, dict]:
+def benchmark_runner(proc_num, op, messages_per_burst, sleeps_per_burst, sleep_time, seconds_per_burst, bursts) -> dict[int, dict]:
     print(f'Generator: {proc_num} starting')
     client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
-    deathstar_generator = deathstar_workload_generator()
+    deathstar_generator = deathstar_workload_generator(op)
     start = timer()
     
     for b in range(bursts):
@@ -190,9 +193,25 @@ def main():
     parser.add_argument("--sleep_time", type=float, default=0.08, help="Sleep time between messages")
     parser.add_argument("--seconds_per_burst", type=int, default=1, help="Seconds per burst")
     parser.add_argument("--bursts", type=int, default=100, help="Number of bursts")
+    parser.add_argument("--experiment", type=str, default="baseline", help="Experiment type")
     args = parser.parse_args()
     
+    EXPERIMENT = args.experiment
+    
+    print(f"Experiment [{EXPERIMENT}]")
     print(f"Starting with args:\n{args}")
+
+
+    if EXPERIMENT == "baseline":
+        frontend_op.dataflow = frontend_df_serial()
+    elif EXPERIMENT == "pipelined":
+        frontend_op.dataflow = frontend_df_serial()
+        dead_node_elimination([], [frontend_op])
+    elif EXPERIMENT == "parallel":
+        frontend_op.dataflow = frontend_df_parallel()
+    else:
+        raise RuntimeError(f"EXPERIMENT is not set correctly: {EXPERIMENT}")
+
 
     init_client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
 
@@ -210,7 +229,7 @@ def main():
     #     results = p.map(benchmark_runner, range(threads))
 
     # results = {k: v for d in results for k, v in d.items()}
-    results = benchmark_runner(0, args.messages_per_burst, args.sleeps_per_burst, args.sleep_time, args.seconds_per_burst, args.bursts)
+    results = benchmark_runner(0, frontend_op, args.messages_per_burst, args.sleeps_per_burst, args.sleep_time, args.seconds_per_burst, args.bursts)
 
     print("last result:")
     print(list(results.values())[-1])
