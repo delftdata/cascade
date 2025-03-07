@@ -27,6 +27,9 @@ logger.addHandler(console_handler)
 # Required if SelectAll nodes are used
 SELECT_ALL_ENABLED = False
 
+# Add profiling information to metadata
+PROFILE = True
+
 @dataclass
 class FlinkRegisterKeyNode(Node):
     """A node that will register a key with the SelectAll operator.
@@ -56,6 +59,7 @@ class FlinkOperator(KeyedProcessFunction):
         self.state: ValueState = runtime_context.get_state(descriptor)
 
     def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
+        event = profile_event(event, "STATEFUL OP INNER ENTRY")
 
         # should be handled by filters on this FlinkOperator    
         assert(isinstance(event.target, OpNode)) 
@@ -123,6 +127,7 @@ class FlinkStatelessOperator(ProcessFunction):
 
 
     def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
+        event = profile_event(event, "STATELESS OP INNER ENTRY")
 
         # should be handled by filters on this FlinkOperator    
         assert(isinstance(event.target, StatelessOpNode)) 
@@ -206,6 +211,8 @@ class FlinkCollectOperator(KeyedProcessFunction):
         self.collection = runtime_context.get_state(descriptor)
 
     def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
+        event = profile_event(event, "COLLECT OP INNER ENTRY")
+
         collection: list[Result] = self.collection.value()
         logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Processing: {event}")
         
@@ -307,6 +314,15 @@ def timestamp_event(e: Event) -> Event:
         pass
     return e
 
+def profile_event(e: Event, ts_name: str) -> Event:
+    if not PROFILE:
+        return e
+    t1 = time.time()
+    if "prof" not in e.metadata:
+        e.metadata["prof"] = []
+    e.metadata["prof"].append((ts_name, t1))
+    return e
+
 def timestamp_result(e: EventResult) -> EventResult:
     t1 = time.time()
     e.metadata["out_t"] = t1
@@ -370,10 +386,15 @@ class FlinkRuntime():
             config.set_string("rest.port", str(self.ui_port))
         config.set_integer("python.fn-execution.bundle.time", bundle_time)
         config.set_integer("python.fn-execution.bundle.size", bundle_size)
+        
+        config.set_string("python.execution-mode", "thread")
+        config.set_boolean("python.metric.enabled", False)
 
         # optimize for low latency
         # config.set_integer("taskmanager.memory.managed.size", 0)
-        config.set_integer("execution.buffer-timeout", 5)
+        config.set_string("execution.batch-shuffle-mode", "ALL_EXCHANGES_PIPELINED")
+        # config.set_integer("execution.buffer-timeout.interval", 0)
+        config.set_string("execution.buffer-timeout", "0 ms")
         
         
         kafka_jar = os.path.join(os.path.abspath(os.path.dirname(__file__)),
@@ -453,7 +474,7 @@ class FlinkRuntime():
                 )
                 .map(lambda x: deserialize_and_timestamp(x))
                 .name("DESERIALIZE internal")
-            )
+            ).map(lambda e: profile_event(e, "DESERIALIZE DONE"))
 
         # Events with a `SelectAllNode` will first be processed by the select 
         # all operator, which will send out multiple other Events that can
@@ -488,11 +509,14 @@ class FlinkRuntime():
         flink_op = FlinkOperator(op)
 
         op_stream = (
-            self.stateful_op_stream.filter(lambda e: isinstance(e.target, OpNode) and e.target.entity == flink_op.operator.entity)
+            self.stateful_op_stream
+                .map(lambda e: profile_event(e, "STATEFUL OP FILTER: " + flink_op.operator.entity.__name__))
+                .filter(lambda e: isinstance(e.target, OpNode) and e.target.entity == flink_op.operator.entity)
+                .map(lambda e: profile_event(e, "STATEFUL OP ENTRY: " + flink_op.operator.entity.__name__))
                 .key_by(lambda e: e.variable_map[e.target.read_key_from])
                 .process(flink_op)
                 .name("STATEFUL OP: " + flink_op.operator.entity.__name__)
-            )
+            ).map(lambda e: profile_event(e, "STATEFUL OP EXIT: " + flink_op.operator.entity.__name__))
         self.stateful_op_streams.append(op_stream)
 
     def add_stateless_operator(self, op: StatelessOperator):
@@ -501,10 +525,13 @@ class FlinkRuntime():
 
         op_stream = (
             self.stateless_op_stream
+                .map(lambda e: profile_event(e, "STATELESS OP FILTER: " + flink_op.operator.dataflow.name))
                 .filter(lambda e: isinstance(e.target, StatelessOpNode) and e.target.operator.dataflow.name == flink_op.operator.dataflow.name)
+                .map(lambda e: profile_event(e, "STATELESS OP ENTRY: " + flink_op.operator.dataflow.name))
                 .process(flink_op)
                 .name("STATELESS DATAFLOW: " + flink_op.operator.dataflow.name)
-            )
+            ).map(lambda e: profile_event(e, "STATELESS OP EXIT: " + flink_op.operator.dataflow.name))
+
         self.stateless_op_streams.append(op_stream)
 
     def run(self, run_async=False, output: Literal["collect", "kafka", "stdout"]="kafka") -> Union[CloseableIterator, None]:
@@ -520,11 +547,11 @@ class FlinkRuntime():
         if len(self.stateful_op_streams) >= 1:
             s1 = self.stateful_op_streams[0]
             rest = self.stateful_op_streams[1:]
-            operator_streams = s1.union(*rest, *self.stateless_op_streams)
+            operator_streams = s1.union(*rest, *self.stateless_op_streams).map(lambda e: profile_event(e, "OP STREAM UNION"))
         elif len(self.stateless_op_streams) >= 1:
             s1 = self.stateless_op_streams[0]
             rest = self.stateless_op_streams[1:]
-            operator_streams = s1.union(*rest, *self.stateful_op_streams)
+            operator_streams = s1.union(*rest, *self.stateful_op_streams).map(lambda e: profile_event(e, "OP STREAM UNION"))
         else:
             raise RuntimeError("No operators found, were they added to the flink runtime with .add_*_operator()")
 
@@ -537,12 +564,14 @@ class FlinkRuntime():
         """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 
         # union with EventResults or Events that don't have a CollectNode target
-        ds = merge_op_stream.union(operator_streams.filter(lambda e: not (isinstance(e, Event) and isinstance(e.target, CollectNode))))
+        ds = merge_op_stream.union(operator_streams.filter(lambda e: not (isinstance(e, Event) and isinstance(e.target, CollectNode)))).map(lambda e: profile_event(e, "MERGE UNION"))
+
 
         # Output the stream
         results = (
             ds
                 .filter(lambda e: isinstance(e, EventResult))
+                .map(lambda e: profile_event(e, "EXTERNAL SINK"))
                 .map(lambda e: timestamp_result(e))
         )
         if output == "collect":
@@ -554,7 +583,14 @@ class FlinkRuntime():
         else:
             raise ValueError(f"Invalid output: {output}")
 
-        ds_internal = ds.filter(lambda e: isinstance(e, Event)).map(lambda e: timestamp_event(e)).sink_to(self.kafka_internal_sink).name("INTERNAL KAFKA SINK")
+        ds_internal = (
+            ds
+                .filter(lambda e: isinstance(e, Event))
+                .map(lambda e: profile_event(e, "INTERNAL SINK"))
+                .map(lambda e: timestamp_event(e))
+                .sink_to(self.kafka_internal_sink)
+                .name("INTERNAL KAFKA SINK")
+        )
 
         if run_async:
             logger.debug("FlinkRuntime starting (async)")
