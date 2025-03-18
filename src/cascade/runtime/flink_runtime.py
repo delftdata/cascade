@@ -11,6 +11,7 @@ from pyflink.datastream.data_stream import CloseableIterator
 from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext, ValueState, ValueStateDescriptor
 from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRecordSerializationSchema, KafkaSource, KafkaSink
 from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
+from pyflink.datastream.output_tag import OutputTag
 import pickle 
 from cascade.dataflow.dataflow import CollectNode, CollectTarget, Event, EventResult, Filter, InitClass, InvokeMethod, Node, OpNode, SelectAllNode, StatelessOpNode
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
@@ -28,7 +29,7 @@ logger.addHandler(console_handler)
 SELECT_ALL_ENABLED = False
 
 # Add profiling information to metadata
-PROFILE = False
+PROFILE = True
 
 @dataclass
 class FlinkRegisterKeyNode(Node):
@@ -45,6 +46,28 @@ class FlinkRegisterKeyNode(Node):
     def propogate(self, event: Event, targets: list[Node], result: Any, **kwargs) -> list[Event]:
         """A key registration event does not propogate."""
         return []
+
+class FanOutOperator(ProcessFunction):
+    """"""
+    # def __init__(self, stateless_ops: dict[str, OutputTag], stateful_ops: dict[str, OutputTag]) -> None:
+    #     self.stateless_ops = stateless_ops
+    #     self.stateful_ops = stateful_ops
+
+    def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
+        event = profile_event(event, "FanOut")
+
+        if isinstance(event.target, StatelessOpNode):
+            tag = OutputTag(event.target.operator.name())
+            yield tag, event
+        elif isinstance(event.target, OpNode):
+            tag = OutputTag(event.target.entity.__name__)
+        else:
+            logger.error(f"FanOut: Wrong target: {event}")
+            return
+        
+        logger.debug(f"Fanout: {tag.tag_id}")
+        yield tag, event
+        
 
 class FlinkOperator(KeyedProcessFunction):
     """Wraps an `cascade.dataflow.datflow.StatefulOperator` in a KeyedProcessFunction so that it can run in Flink.
@@ -504,9 +527,10 @@ class FlinkRuntime():
 
             event_stream = select_all_stream.union(not_select_all_stream)
 
-        # event_stream = event_stream.disable_chaining()
-        self.stateful_op_stream = event_stream
-        self.stateless_op_stream = event_stream
+        # # event_stream = event_stream.disable_chaining()
+        # self.stateful_op_stream = event_stream
+        # self.stateless_op_stream = event_stream
+        self.event_stream = event_stream.process(FanOutOperator())
 
 
         self.stateless_op_streams = []
@@ -519,31 +543,50 @@ class FlinkRuntime():
         """Add a `FlinkOperator` to the Flink datastream."""
         flink_op = FlinkOperator(op)
 
+        tag = OutputTag(op.name())
+
         op_stream = (
-            self.stateful_op_stream
-                # .map(lambda e: profile_event(e, "STATEFUL OP FILTER: " + flink_op.operator.entity.__name__))
-                .filter(lambda e: isinstance(e.target, OpNode) and e.target.entity == flink_op.operator.entity)
-                # .disable_chaining()
-                # .map(lambda e: profile_event(e, "STATEFUL OP ENTRY: " + flink_op.operator.entity.__name__))
+            self.event_stream
+                .get_side_output(tag)
                 .key_by(lambda e: e.variable_map[e.target.read_key_from])
                 .process(flink_op)
                 .name("STATEFUL OP: " + flink_op.operator.entity.__name__)
-            )#.map(lambda e: profile_event(e, "STATEFUL OP EXIT: " + flink_op.operator.entity.__name__))
+        ).map(lambda e: profile_event(e, "STATEFUL OP EXIT: " + flink_op.operator.entity.__name__))
+        # self.stateful_op_tags.append(tag)
+
+        # op_stream = (
+        #     self.stateful_op_stream
+        #         # .map(lambda e: profile_event(e, "STATEFUL OP FILTER: " + flink_op.operator.entity.__name__))
+        #         .filter(lambda e: isinstance(e.target, OpNode) and e.target.entity == flink_op.operator.entity)
+        #         # .disable_chaining()
+        #         # .map(lambda e: profile_event(e, "STATEFUL OP ENTRY: " + flink_op.operator.entity.__name__))
+        #         .key_by(lambda e: e.variable_map[e.target.read_key_from])
+        #         .process(flink_op)
+        #         .name("STATEFUL OP: " + flink_op.operator.entity.__name__)
+        #     )#.map(lambda e: profile_event(e, "STATEFUL OP EXIT: " + flink_op.operator.entity.__name__))
         self.stateful_op_streams.append(op_stream)
 
     def add_stateless_operator(self, op: StatelessOperator):
         """Add a `FlinkStatelessOperator` to the Flink datastream."""
         flink_op = FlinkStatelessOperator(op)
 
+        tag = OutputTag(op.name())
         op_stream = (
-            self.stateless_op_stream
-                # .map(lambda e: profile_event(e, "STATELESS OP FILTER: " + flink_op.operator.dataflow.name))
-                .filter(lambda e: isinstance(e.target, StatelessOpNode) and e.target.operator.dataflow.name == flink_op.operator.dataflow.name)
-                # .disable_chaining()
-                # .map(lambda e: profile_event(e, "STATELESS OP ENTRY: " + flink_op.operator.dataflow.name))
+            self.event_stream
+                .get_side_output(tag)
                 .process(flink_op)
                 .name("STATELESS DATAFLOW: " + flink_op.operator.dataflow.name)
-            )#.map(lambda e: profile_event(e, "STATELESS OP EXIT: " + flink_op.operator.dataflow.name))
+        ).map(lambda e: profile_event(e, "STATELESS OP EXIT: " + flink_op.operator.dataflow.name))
+        # self.stateless_op_tags.append(tag)
+        # op_stream = (
+        #     self.stateless_op_stream
+        #         # .map(lambda e: profile_event(e, "STATELESS OP FILTER: " + flink_op.operator.dataflow.name))
+        #         .filter(lambda e: isinstance(e.target, StatelessOpNode) and e.target.operator.dataflow.name == flink_op.operator.dataflow.name)
+        #         # .disable_chaining()
+        #         # .map(lambda e: profile_event(e, "STATELESS OP ENTRY: " + flink_op.operator.dataflow.name))
+        #         .process(flink_op)
+        #         .name("STATELESS DATAFLOW: " + flink_op.operator.dataflow.name)
+        #     )#.map(lambda e: profile_event(e, "STATELESS OP EXIT: " + flink_op.operator.dataflow.name))
 
         self.stateless_op_streams.append(op_stream)
 
@@ -577,7 +620,7 @@ class FlinkRuntime():
         """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 
         # union with EventResults or Events that don't have a CollectNode target
-        ds = merge_op_stream.union(operator_streams.filter(lambda e: not (isinstance(e, Event) and isinstance(e.target, CollectNode))))#.map(lambda e: profile_event(e, "MERGE UNION"))
+        ds = merge_op_stream.union(operator_streams.filter(lambda e: not (isinstance(e, Event) and isinstance(e.target, CollectNode)))).map(lambda e: profile_event(e, "MERGE UNION"))
 
 
         # Output the stream

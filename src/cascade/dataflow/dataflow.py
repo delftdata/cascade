@@ -9,7 +9,9 @@ if TYPE_CHECKING:
     
 
 class Operator(ABC):
-    pass
+    @abstractmethod
+    def name(self) -> str:
+        pass
 
 @dataclass
 class InitClass:

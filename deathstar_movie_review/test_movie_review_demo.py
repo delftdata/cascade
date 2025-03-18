@@ -1,3 +1,8 @@
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
+
 from cascade.dataflow.dataflow import Event, InitClass, InvokeMethod, OpNode
 from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
 from cascade.runtime.python_runtime import PythonClientSync, PythonRuntime

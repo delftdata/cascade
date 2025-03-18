@@ -107,6 +107,9 @@ class StatefulOperator(Generic[T], Operator):
         The state `T` is passed along to the function, and may be modified. 
         """
         return self._methods[method.method_name](variable_map=variable_map, state=state)
+    
+    def name(self):
+        return self.entity.__name__
 
 
 class StatelessMethodCall(Protocol):
@@ -130,4 +133,7 @@ class StatelessOperator(Operator):
         The state `T` is passed along to the function, and may be modified. 
         """
         return self._methods[method.method_name](variable_map=variable_map)
+    
+    def name(self) -> str:
+        return self.dataflow.name
 
