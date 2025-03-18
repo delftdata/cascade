@@ -52,6 +52,14 @@ mps_500 = {
     "sleep_time": 0.09/50,
 }
 
+def mps(num):
+    return {
+        **args,
+        "messages_per_burst": num,
+        "sleeps_per_burst": num,
+        "sleep_time": 0.9/num
+    }
+
 
 # Define experiment parameters as a list of dictionaries
 experiments = [
@@ -66,8 +74,19 @@ experiments = [
     # {"parallelism": 4, "benchmark_args": {**mps_20}},
     # {"parallelism": 2, "benchmark_args": {**mps_20}},
     # {"parallelism": 1, "benchmark_args": {**mps_20}},
+    {"parallelism": 4, "benchmark_args": {**mps(20)}},
+    {"parallelism": 4, "benchmark_args": {**mps(40)}},
+    {"parallelism": 4, "benchmark_args": {**mps(60)}},
+    {"parallelism": 4, "benchmark_args": {**mps(80)}},
+    {"parallelism": 4, "benchmark_args": {**mps(100)}},
+    # {"parallelism": 4, "benchmark_args": {**mps(300)}},
 
-    {"parallelism": 16, "benchmark_args": {**mps_500}},
+    # {"parallelism": 24, "benchmark_args": {**mps(200)}},
+    # {"parallelism": 24, "benchmark_args": {**mps(400)}},
+    # {"parallelism": 24, "benchmark_args": {**mps(600)}},
+    # {"parallelism": 24, "benchmark_args": {**mps(800)}},
+    # {"parallelism": 24, "benchmark_args": {**mps(1000)}},
+    # {"parallelism": 16, "benchmark_args": {**mps(100)}},
     # {"parallelism": 32, "benchmark_args": {**mps_500}},
     # {"parallelism": 8, "benchmark_args": {**mps_50}},
     # {"parallelism": 4, "benchmark_args": {**mps_50}},
@@ -81,8 +100,8 @@ experiments = [
 print("Tearing down docker containers")
 subprocess.run(["docker", "compose", "down"], check=True)
 
-# for e in ["pipelined", "parallel", "baseline"]:
-for e in ["parallel"]:
+for e in ["pipelined", "parallel", "baseline"]:
+# for e in ["parallel"]:
     for exp in experiments:
         print(f"Starting experiment {exp}")
         

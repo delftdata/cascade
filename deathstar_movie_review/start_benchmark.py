@@ -1,4 +1,5 @@
 import hashlib
+from multiprocessing import Pool
 import time
 from typing import Literal
 import uuid
@@ -101,7 +102,8 @@ def deathstar_workload_generator(op):
         c += 1
 
 
-def benchmark_runner(proc_num, op, messages_per_burst, sleeps_per_burst, sleep_time, seconds_per_burst, bursts) -> dict[int, dict]:
+def benchmark_runner(args) -> dict[int, dict]:
+    proc_num, op, messages_per_burst, sleeps_per_burst, sleep_time, seconds_per_burst, bursts = args
     print(f'Generator: {proc_num} starting')
     client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
     deathstar_generator = deathstar_workload_generator(op)
@@ -194,6 +196,7 @@ def main():
     parser.add_argument("--seconds_per_burst", type=int, default=1, help="Seconds per burst")
     parser.add_argument("--bursts", type=int, default=100, help="Number of bursts")
     parser.add_argument("--experiment", type=str, default="baseline", help="Experiment type")
+    parser.add_argument("--no_init", action="store_true", help="Don't populate")
     args = parser.parse_args()
     
     EXPERIMENT = args.experiment
@@ -214,22 +217,26 @@ def main():
 
 
     init_client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
-
-    print("Populating...")
-    populate_user(init_client)
-    populate_movie(init_client)
-    init_client.producer.flush()
-    wait_for_futures(init_client)
-    print("Done.")
-    time.sleep(1)
+     
+    if not args.no_init:
+        print("Populating...")
+        populate_user(init_client)
+        populate_movie(init_client)
+        init_client.producer.flush()
+        wait_for_futures(init_client)
+        print("Done.")
+        time.sleep(1)
 
     print("Starting benchmark")
 
-    # with Pool(threads) as p:
-    #     results = p.map(benchmark_runner, range(threads))
 
-    # results = {k: v for d in results for k, v in d.items()}
-    results = benchmark_runner(0, frontend_op, args.messages_per_burst, args.sleeps_per_burst, args.sleep_time, args.seconds_per_burst, args.bursts)
+    threads = 1
+    func_args = [(t, frontend_op, args.messages_per_burst, args.sleeps_per_burst, args.sleep_time, args.seconds_per_burst, args.bursts) for t in range(threads)]
+    with Pool(threads) as p:
+        results = p.map(benchmark_runner, func_args)
+
+    results = {k: v for d in results for k, v in d.items()}
+    # results = benchmark_runner(0, frontend_op, args.messages_per_burst, args.sleeps_per_burst, args.sleep_time, args.seconds_per_burst, args.bursts)
 
     print("last result:")
     print(list(results.values())[-1])

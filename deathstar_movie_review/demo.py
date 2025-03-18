@@ -36,7 +36,7 @@ def create_topics(*required_topics):
         print(f"Creating missing topics: {missing_topics}")
         
         # Define new topics (default: 1 partition, replication factor 1)
-        new_topics = [NewTopic(topic, num_partitions=1, replication_factor=1) for topic in missing_topics]
+        new_topics = [NewTopic(topic, num_partitions=32, replication_factor=1) for topic in missing_topics]
 
         # Create topics
         futures = admin_client.create_topics(new_topics)

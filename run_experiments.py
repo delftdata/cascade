@@ -5,7 +5,7 @@ import time
 args = {
     "messages_per_burst": 10,
     "sleeps_per_burst": 10,
-    "sleep_time": 0.08,
+    "sleep_time": 0.09,
     "seconds_per_burst": 1,
     "bursts": 100
 }
@@ -14,58 +14,50 @@ mps_1 = {
     **args,
     "messages_per_burst": 1,
     "sleeps_per_burst": 1,
-    "sleep_time": 0.8,
+    "sleep_time": 0.9,
 }
 
 mps_20 = { 
     **args, 
     "messages_per_burst": 20,
     "sleeps_per_burst": 20,
-    "sleep_time": 0.08/2,
+    "sleep_time": 0.09/2,
+}
+
+mps_30 = { 
+    **args, 
+    "messages_per_burst": 30,
+    "sleeps_per_burst": 30,
+    "sleep_time": 0.09/3,
 }
 
 mps_50 = { 
     **args, 
     "messages_per_burst": 50,
     "sleeps_per_burst": 50,
-    "sleep_time": 0.08/5,
+    "sleep_time": 0.09/5,
 }
+
 
 # Define experiment parameters as a list of dictionaries
 experiments = [
-    {"parallelism": 16, "benchmark_args": {**mps_1}},
-    {"parallelism": 16, "benchmark_args": {**args}},
-
-    {"parallelism": 8, "benchmark_args": {**mps_1}},
-    {"parallelism": 8, "benchmark_args": {**args}},
-
-    {"parallelism": 4, "benchmark_args": {**mps_1}},
-    {"parallelism": 4, "benchmark_args": {**args}},
-
-    {"parallelism": 2, "benchmark_args": {**mps_1}},
-    {"parallelism": 2, "benchmark_args": {**args}},
-    
-    {"parallelism": 1, "benchmark_args": {**mps_1}},
-    {"parallelism": 1, "benchmark_args": {**args}},
-    # {"parallelism": 16, "benchmark_args": {**mps_20}},
-    # {"parallelism": 16, "benchmark_args": {**mps_50}},
-
+    # {"parallelism": 16, "benchmark_args": {**args}},
     # {"parallelism": 8, "benchmark_args": {**args}},
-    # {"parallelism": 8, "benchmark_args": {**mps_20}},
-
-    # {"parallelism": 4, "benchmark_args": {**mps_20}},
     # {"parallelism": 4, "benchmark_args": {**args}},
-
     # {"parallelism": 2, "benchmark_args": {**args}},
-    # {"parallelism": 2, "benchmark_args": {**mps_20}},
-
     # {"parallelism": 1, "benchmark_args": {**args}},
+    
+    # {"parallelism": 16, "benchmark_args": {**mps_20}},
+    # {"parallelism": 8, "benchmark_args": {**mps_20}},
+    # {"parallelism": 4, "benchmark_args": {**mps_20}},
+    # {"parallelism": 2, "benchmark_args": {**mps_20}},
     # {"parallelism": 1, "benchmark_args": {**mps_20}},
 
-    # {"parallelism": 8, "benchmark_args": {**mps_50}},
-    # {"parallelism": 4, "benchmark_args": {**mps_50}},
-    # {"parallelism": 2, "benchmark_args": {**mps_50}},
-    # {"parallelism": 1, "benchmark_args": {**mps_50}},
+    {"parallelism": 16, "benchmark_args": {**mps_50}},
+    {"parallelism": 8, "benchmark_args": {**mps_50}},
+    {"parallelism": 4, "benchmark_args": {**mps_50}},
+    {"parallelism": 2, "benchmark_args": {**mps_50}},
+    {"parallelism": 1, "benchmark_args": {**mps_50}},
 ]
 
 

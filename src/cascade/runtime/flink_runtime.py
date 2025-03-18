@@ -28,7 +28,7 @@ logger.addHandler(console_handler)
 SELECT_ALL_ENABLED = False
 
 # Add profiling information to metadata
-PROFILE = True
+PROFILE = False
 
 @dataclass
 class FlinkRegisterKeyNode(Node):
@@ -388,12 +388,15 @@ class FlinkRuntime():
         config.set_integer("python.fn-execution.bundle.size", bundle_size)
         
         config.set_string("python.execution-mode", "thread")
-        config.set_boolean("python.metric.enabled", False)
+
+        # METRICS
+        config.set_boolean("python.metric.enabled", True)
+        config.set_string("metrics.latency.interval", "500 ms")
+        config.set_boolean("state.latency-track.keyed-state-enabled", True)
+        config.set_boolean("taskmanager.network.detailed-metrics", True)
 
         # optimize for low latency
-        # config.set_integer("taskmanager.memory.managed.size", 0)
         config.set_string("execution.batch-shuffle-mode", "ALL_EXCHANGES_PIPELINED")
-        # config.set_integer("execution.buffer-timeout.interval", 0)
         config.set_string("execution.buffer-timeout", "0 ms")
         
         
@@ -408,7 +411,8 @@ class FlinkRuntime():
         self.env = StreamExecutionEnvironment.get_execution_environment(config)
         if parallelism:
             self.env.set_parallelism(parallelism)
-        logger.debug(f"FlinkRuntime: parellelism {self.env.get_parallelism()}")
+        parallelism = self.env.get_parallelism()
+        logger.debug(f"FlinkRuntime: parellelism {parallelism}")
 
 
         deserialization_schema = ByteSerializer()
@@ -429,11 +433,16 @@ class FlinkRuntime():
                 .set_group_id("test_group_1")
                 .set_starting_offsets(KafkaOffsetsInitializer.earliest())
                 .set_value_only_deserializer(deserialization_schema)
+                .set_property("fetch.min.bytes", "1")
+                .set_property("max.partition.fetch.bytes", "1048576")
+                .set_property("enable.auto.commit", "false")
                 .build()
         )
         self.kafka_internal_sink = (
             KafkaSink.builder()
                 .set_bootstrap_servers(kafka_broker)
+                .set_property("linger.ms", "0")
+                .set_property("acks", "1")
                 .set_record_serializer(
                     KafkaRecordSerializationSchema.builder()
                         .set_topic(self.internal_topic)
@@ -464,17 +473,18 @@ class FlinkRuntime():
                     "Kafka External Source"
                 )
                 .map(lambda x: deserialize_and_timestamp(x))
+                .set_parallelism(parallelism=max(parallelism//4, 1))
                 .name("DESERIALIZE external")
                 # .filter(lambda e: isinstance(e, Event)) # Enforced by `send` type safety
             ).union(
                 self.env.from_source(
                     kafka_internal_source, 
                     WatermarkStrategy.no_watermarks(),
-                    "Kafka External Source"
+                    "Kafka Internal Source"
                 )
                 .map(lambda x: deserialize_and_timestamp(x))
                 .name("DESERIALIZE internal")
-            ).map(lambda e: profile_event(e, "DESERIALIZE DONE"))
+            )#.map(lambda e: profile_event(e, "DESERIALIZE DONE"))
 
         # Events with a `SelectAllNode` will first be processed by the select 
         # all operator, which will send out multiple other Events that can
@@ -494,6 +504,7 @@ class FlinkRuntime():
 
             event_stream = select_all_stream.union(not_select_all_stream)
 
+        # event_stream = event_stream.disable_chaining()
         self.stateful_op_stream = event_stream
         self.stateless_op_stream = event_stream
 
@@ -510,13 +521,14 @@ class FlinkRuntime():
 
         op_stream = (
             self.stateful_op_stream
-                .map(lambda e: profile_event(e, "STATEFUL OP FILTER: " + flink_op.operator.entity.__name__))
+                # .map(lambda e: profile_event(e, "STATEFUL OP FILTER: " + flink_op.operator.entity.__name__))
                 .filter(lambda e: isinstance(e.target, OpNode) and e.target.entity == flink_op.operator.entity)
-                .map(lambda e: profile_event(e, "STATEFUL OP ENTRY: " + flink_op.operator.entity.__name__))
+                # .disable_chaining()
+                # .map(lambda e: profile_event(e, "STATEFUL OP ENTRY: " + flink_op.operator.entity.__name__))
                 .key_by(lambda e: e.variable_map[e.target.read_key_from])
                 .process(flink_op)
                 .name("STATEFUL OP: " + flink_op.operator.entity.__name__)
-            ).map(lambda e: profile_event(e, "STATEFUL OP EXIT: " + flink_op.operator.entity.__name__))
+            )#.map(lambda e: profile_event(e, "STATEFUL OP EXIT: " + flink_op.operator.entity.__name__))
         self.stateful_op_streams.append(op_stream)
 
     def add_stateless_operator(self, op: StatelessOperator):
@@ -525,12 +537,13 @@ class FlinkRuntime():
 
         op_stream = (
             self.stateless_op_stream
-                .map(lambda e: profile_event(e, "STATELESS OP FILTER: " + flink_op.operator.dataflow.name))
+                # .map(lambda e: profile_event(e, "STATELESS OP FILTER: " + flink_op.operator.dataflow.name))
                 .filter(lambda e: isinstance(e.target, StatelessOpNode) and e.target.operator.dataflow.name == flink_op.operator.dataflow.name)
-                .map(lambda e: profile_event(e, "STATELESS OP ENTRY: " + flink_op.operator.dataflow.name))
+                # .disable_chaining()
+                # .map(lambda e: profile_event(e, "STATELESS OP ENTRY: " + flink_op.operator.dataflow.name))
                 .process(flink_op)
                 .name("STATELESS DATAFLOW: " + flink_op.operator.dataflow.name)
-            ).map(lambda e: profile_event(e, "STATELESS OP EXIT: " + flink_op.operator.dataflow.name))
+            )#.map(lambda e: profile_event(e, "STATELESS OP EXIT: " + flink_op.operator.dataflow.name))
 
         self.stateless_op_streams.append(op_stream)
 
@@ -547,11 +560,11 @@ class FlinkRuntime():
         if len(self.stateful_op_streams) >= 1:
             s1 = self.stateful_op_streams[0]
             rest = self.stateful_op_streams[1:]
-            operator_streams = s1.union(*rest, *self.stateless_op_streams).map(lambda e: profile_event(e, "OP STREAM UNION"))
+            operator_streams = s1.union(*rest, *self.stateless_op_streams)#.map(lambda e: profile_event(e, "OP STREAM UNION"))
         elif len(self.stateless_op_streams) >= 1:
             s1 = self.stateless_op_streams[0]
             rest = self.stateless_op_streams[1:]
-            operator_streams = s1.union(*rest, *self.stateful_op_streams).map(lambda e: profile_event(e, "OP STREAM UNION"))
+            operator_streams = s1.union(*rest, *self.stateful_op_streams)#.map(lambda e: profile_event(e, "OP STREAM UNION"))
         else:
             raise RuntimeError("No operators found, were they added to the flink runtime with .add_*_operator()")
 
@@ -564,14 +577,14 @@ class FlinkRuntime():
         """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 
         # union with EventResults or Events that don't have a CollectNode target
-        ds = merge_op_stream.union(operator_streams.filter(lambda e: not (isinstance(e, Event) and isinstance(e.target, CollectNode)))).map(lambda e: profile_event(e, "MERGE UNION"))
+        ds = merge_op_stream.union(operator_streams.filter(lambda e: not (isinstance(e, Event) and isinstance(e.target, CollectNode))))#.map(lambda e: profile_event(e, "MERGE UNION"))
 
 
         # Output the stream
         results = (
             ds
                 .filter(lambda e: isinstance(e, EventResult))
-                .map(lambda e: profile_event(e, "EXTERNAL SINK"))
+                # .map(lambda e: profile_event(e, "EXTERNAL SINK"))
                 .map(lambda e: timestamp_result(e))
         )
         if output == "collect":
@@ -586,7 +599,7 @@ class FlinkRuntime():
         ds_internal = (
             ds
                 .filter(lambda e: isinstance(e, Event))
-                .map(lambda e: profile_event(e, "INTERNAL SINK"))
+                # .map(lambda e: profile_event(e, "INTERNAL SINK"))
                 .map(lambda e: timestamp_event(e))
                 .sink_to(self.kafka_internal_sink)
                 .name("INTERNAL KAFKA SINK")
