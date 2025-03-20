@@ -18,7 +18,7 @@ from confluent_kafka import Producer, Consumer
 import logging
 
 logger = logging.getLogger(__name__)
-logger.setLevel(1)
+logger.setLevel("WARNING")
 console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
@@ -29,6 +29,9 @@ SELECT_ALL_ENABLED = False
 
 # Add profiling information to metadata
 PROFILE = False
+
+# Enable latency metrics
+METRICS = False
 
 @dataclass
 class FlinkRegisterKeyNode(Node):
@@ -390,10 +393,11 @@ class FlinkRuntime():
         config.set_string("python.execution-mode", "thread")
 
         # METRICS
-        config.set_boolean("python.metric.enabled", True)
-        config.set_string("metrics.latency.interval", "500 ms")
-        config.set_boolean("state.latency-track.keyed-state-enabled", True)
-        config.set_boolean("taskmanager.network.detailed-metrics", True)
+        if METRICS:
+            config.set_boolean("python.metric.enabled", True)
+            config.set_string("metrics.latency.interval", "500 ms")
+            config.set_boolean("state.latency-track.keyed-state-enabled", True)
+            config.set_boolean("taskmanager.network.detailed-metrics", True)
 
         # optimize for low latency
         config.set_string("execution.batch-shuffle-mode", "ALL_EXCHANGES_PIPELINED")
