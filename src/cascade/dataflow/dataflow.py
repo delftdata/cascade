@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional, Type, Union
 from typing import TYPE_CHECKING
+import uuid
 
 if TYPE_CHECKING:
     # Prevent circular imports
@@ -344,6 +345,7 @@ class DataFlow:
     def generate_event(self, variable_map: dict[str, Any]) -> Union['Event', list['Event']]:
         if isinstance(self.entry, list):
             assert len(self.entry) != 0
+            # give all the events the same id
             first_event = Event(self.entry[0], variable_map, self)
             id = first_event._id
             return [first_event] + [Event(entry, variable_map, self, _id=id) for entry in self.entry[1:]] 
@@ -387,7 +389,7 @@ class Event():
     collect_target: Optional[CollectTarget] = field(default=None)
     """Tells each mergenode (key) how many events to merge on"""
 
-    _id_counter: int = field(init=False, default=0, repr=False)
+    # _id_counter: int = field(init=False, default=0, repr=False)
 
     metadata: dict = field(default_factory=metadata_dict)
     """Event metadata containing, for example, timestamps for benchmarking"""
@@ -395,8 +397,9 @@ class Event():
     def __post_init__(self):
         if self._id is None:
             # Assign a unique ID from the class-level counter
-            self._id = Event._id_counter
-            Event._id_counter += 1
+            self._id = uuid.uuid4().int
+            # self._id = Event._id_counter
+            # Event._id_counter += 1
 
     def propogate(self, result, select_all_keys: Optional[list[str]]=None) -> Union['EventResult', list['Event']]:
         """Propogate this event through the Dataflow."""

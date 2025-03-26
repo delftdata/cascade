@@ -19,7 +19,7 @@ from confluent_kafka import Producer, Consumer
 import logging
 
 logger = logging.getLogger(__name__)
-logger.setLevel("WARNING")
+logger.setLevel("INFO")
 console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
@@ -29,7 +29,7 @@ logger.addHandler(console_handler)
 SELECT_ALL_ENABLED = False
 
 # Add profiling information to metadata
-PROFILE = True
+PROFILE = False
 
 # Enable latency metrics
 METRICS = False
@@ -52,18 +52,21 @@ class FlinkRegisterKeyNode(Node):
 
 class FanOutOperator(ProcessFunction):
     """"""
-    # def __init__(self, stateless_ops: dict[str, OutputTag], stateful_ops: dict[str, OutputTag]) -> None:
-    #     self.stateless_ops = stateless_ops
-    #     self.stateful_ops = stateful_ops
+    def __init__(self, stateful_ops: dict[str, OutputTag], stateless_ops: dict[str, OutputTag]) -> None:
+        self.stateful_ops = stateful_ops
+        self.stateless_ops = stateless_ops
 
     def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
         event = profile_event(event, "FanOut")
 
+        logger.debug("FanOut Enter")
+
         if isinstance(event.target, StatelessOpNode):
-            tag = OutputTag(event.target.operator.name())
-            yield tag, event
+            logger.debug(event.target.operator.name())
+            tag = self.stateless_ops[event.target.operator.name()]
         elif isinstance(event.target, OpNode):
-            tag = OutputTag(event.target.entity.__name__)
+            logger.debug(event.target.entity.__name__)
+            tag = self.stateful_ops[event.target.entity.__name__]
         else:
             logger.error(f"FanOut: Wrong target: {event}")
             return
@@ -534,11 +537,11 @@ class FlinkRuntime():
         # # event_stream = event_stream.disable_chaining()
         # self.stateful_op_stream = event_stream
         # self.stateless_op_stream = event_stream
-        self.event_stream = event_stream.process(FanOutOperator())
+        self.event_stream = event_stream
 
 
-        self.stateless_op_streams = []
-        self.stateful_op_streams = []
+        self.stateless_operators: list[FlinkStatelessOperator] = []
+        self.stateful_operators: list[FlinkOperator] = []
         """List of stateful operator streams, which gets appended at `add_operator`."""
 
         logger.debug("FlinkRuntime initialized")
@@ -547,52 +550,14 @@ class FlinkRuntime():
         """Add a `FlinkOperator` to the Flink datastream."""
         flink_op = FlinkOperator(op)
 
-        tag = OutputTag(op.name())
-
-        op_stream = (
-            self.event_stream
-                .get_side_output(tag)
-                .key_by(lambda e: e.variable_map[e.target.read_key_from])
-                .process(flink_op)
-                .name("STATEFUL OP: " + flink_op.operator.entity.__name__)
-        ).map(lambda e: profile_event(e, "STATEFUL OP EXIT: " + flink_op.operator.entity.__name__))
-        # self.stateful_op_tags.append(tag)
-
-        # op_stream = (
-        #     self.stateful_op_stream
-        #         # .map(lambda e: profile_event(e, "STATEFUL OP FILTER: " + flink_op.operator.entity.__name__))
-        #         .filter(lambda e: isinstance(e.target, OpNode) and e.target.entity == flink_op.operator.entity)
-        #         # .disable_chaining()
-        #         # .map(lambda e: profile_event(e, "STATEFUL OP ENTRY: " + flink_op.operator.entity.__name__))
-        #         .key_by(lambda e: e.variable_map[e.target.read_key_from])
-        #         .process(flink_op)
-        #         .name("STATEFUL OP: " + flink_op.operator.entity.__name__)
-        #     )#.map(lambda e: profile_event(e, "STATEFUL OP EXIT: " + flink_op.operator.entity.__name__))
-        self.stateful_op_streams.append(op_stream)
+        self.stateful_operators.append(flink_op)
 
     def add_stateless_operator(self, op: StatelessOperator):
         """Add a `FlinkStatelessOperator` to the Flink datastream."""
         flink_op = FlinkStatelessOperator(op)
 
-        tag = OutputTag(op.name())
-        op_stream = (
-            self.event_stream
-                .get_side_output(tag)
-                .process(flink_op)
-                .name("STATELESS DATAFLOW: " + flink_op.operator.dataflow.name)
-        ).map(lambda e: profile_event(e, "STATELESS OP EXIT: " + flink_op.operator.dataflow.name))
-        # self.stateless_op_tags.append(tag)
-        # op_stream = (
-        #     self.stateless_op_stream
-        #         # .map(lambda e: profile_event(e, "STATELESS OP FILTER: " + flink_op.operator.dataflow.name))
-        #         .filter(lambda e: isinstance(e.target, StatelessOpNode) and e.target.operator.dataflow.name == flink_op.operator.dataflow.name)
-        #         # .disable_chaining()
-        #         # .map(lambda e: profile_event(e, "STATELESS OP ENTRY: " + flink_op.operator.dataflow.name))
-        #         .process(flink_op)
-        #         .name("STATELESS DATAFLOW: " + flink_op.operator.dataflow.name)
-        #     )#.map(lambda e: profile_event(e, "STATELESS OP EXIT: " + flink_op.operator.dataflow.name))
+        self.stateless_operators.append(flink_op)
 
-        self.stateless_op_streams.append(op_stream)
 
     def run(self, run_async=False, output: Literal["collect", "kafka", "stdout"]="kafka") -> Union[CloseableIterator, None]:
         """Start ingesting and processing messages from the Kafka source.
@@ -601,7 +566,38 @@ class FlinkRuntime():
         `cascade.dataflow.dataflow.EventResult`s."""
 
         assert self.env is not None, "FlinkRuntime must first be initialised with `init()`."
-        logger.debug("FlinkRuntime merging operator streams...")
+        logger.info("FlinkRuntime merging operator streams...")
+
+        # create the fanout operator
+        stateful_tags = { op.operator.name() : OutputTag(op.operator.name()) for op in self.stateful_operators}
+        stateless_tags = { op.operator.name() : OutputTag(op.operator.name()) for op in self.stateless_operators}
+        logger.debug(f"{stateful_tags.items()}")
+        fanout = self.event_stream.process(FanOutOperator(stateful_tags, stateless_tags)).name("FANOUT OPERATOR").disable_chaining()
+
+        # create the streams
+        self.stateful_op_streams = []
+        for flink_op in self.stateful_operators:
+            tag = stateful_tags[flink_op.operator.name()]
+            op_stream = (
+                fanout
+                    .get_side_output(tag)
+                    .key_by(lambda e: e.variable_map[e.target.read_key_from])
+                    .process(flink_op)
+                    .name("STATEFUL OP: " + flink_op.operator.name())
+            )
+            self.stateful_op_streams.append(op_stream)
+
+
+        self.stateless_op_streams = []
+        for flink_op in self.stateless_operators:
+            tag = stateless_tags[flink_op.operator.name()]
+            op_stream = (
+                fanout
+                    .get_side_output(tag)
+                    .process(flink_op)
+                    .name("STATELESS OP: " + flink_op.operator.name())
+            )
+            self.stateless_op_streams.append(op_stream)
 
         # Combine all the operator streams
         if len(self.stateful_op_streams) >= 1:
@@ -653,11 +649,11 @@ class FlinkRuntime():
         )
 
         if run_async:
-            logger.debug("FlinkRuntime starting (async)")
+            logger.info("FlinkRuntime starting (async)")
             self.env.execute_async("Cascade: Flink Runtime")
             return ds_external # type: ignore (will be CloseableIterator provided the source is unbounded (i.e. Kafka))
         else:
-            logger.debug("FlinkRuntime starting (sync)")
+            logger.info("FlinkRuntime starting (sync)")
             self.env.execute("Cascade: Flink Runtime")
 
 class FlinkClientSync:

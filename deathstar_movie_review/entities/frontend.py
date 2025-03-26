@@ -1,27 +1,13 @@
-import os
-from typing import Any, Literal
-import uuid
+from typing import Any
 
 from cascade.dataflow.dataflow import CollectNode, CollectTarget, DataFlow, Edge, InvokeMethod, OpNode, StatelessOpNode
 from cascade.dataflow.operator import StatelessOperator
-from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
 from deathstar_movie_review.entities.compose_review import ComposeReview
 from deathstar_movie_review.entities.movie import MovieId
+from deathstar_movie_review.entities.unique_id import UniqueId, unique_id_op
 from deathstar_movie_review.entities.user import User
+from deathstar_movie_review.entities.text import Text, text_op
 
-
-# unique_id is stateless 
-class UniqueId():
-    @staticmethod
-    def upload_unique_id_2(review: ComposeReview):
-        review_id = uuid.uuid1().int >> 64
-        review.upload_unique_id(review_id)
-
-# text is stateless
-class Text():
-    @staticmethod
-    def upload_text_2(review: ComposeReview, text: str):
-        review.upload_text(text)
 
 CHAR_LIMIT = 50
 
@@ -29,54 +15,15 @@ CHAR_LIMIT = 50
 class Frontend():
     @staticmethod
     def compose(review: ComposeReview, user: User, title: MovieId, rating: int, text: str):
-
-        # dead node elimination will remove "returning back" to the original function
-        # 
-        # cascade could theoritically allow for more advanced analysis,
-        # that would enable all these to run in parallel. However, this is only
-        # possible because
-        #   1. the individual functions don't depend on each other
-        #   2. the ordering of side-effects does not matter 
         UniqueId.upload_unique_id_2(review)
         user.upload_user(review)
         title.upload_movie(review, rating)
-
-        text = text[:CHAR_LIMIT] # an operation like this could be reorderd for better efficiency!
+        # text = text[:CHAR_LIMIT] # an operation like this could be reorderd for better efficiency!
         Text.upload_text_2(review, text)
 
+
+
 ###### COMPILED FUNCTIONS ######
-
-### UPLOAD UNIQUE ###
-
-def upload_unique_compiled_0(variable_map: dict[str, Any]):
-    variable_map["review_id"] = uuid.uuid1().int >> 64
-
-unique_id_op = StatelessOperator(
-    {
-        "upload_unique": upload_unique_compiled_0,
-    },
-    None
-)
-
-df = DataFlow("upload_unique_id")
-n0 = StatelessOpNode(unique_id_op, InvokeMethod("upload_unique"))
-n1 = OpNode(ComposeReview, InvokeMethod("upload_unique_id"), read_key_from="review")
-df.entry = n0
-unique_id_op.dataflow = df
-
-### TEXT ###
-
-text_op = StatelessOperator(
-    {},
-    None
-)
-
-df = DataFlow("upload_text")
-n0 = OpNode(ComposeReview, InvokeMethod("upload_text"), read_key_from="review")
-df.entry = n0
-text_op.dataflow = df
-
-### FRONTEND ###
 
 def compose_compiled_0(variable_map: dict[str, Any]):
     pass
@@ -115,6 +62,7 @@ def frontend_df_serial():
     n6 = StatelessOpNode(frontend_op, InvokeMethod("empty"))
 
     # Upload Text DF
+    n7a = StatelessOpNode(text_op, InvokeMethod("upload_text_2"))
     n7 = OpNode(ComposeReview, InvokeMethod("upload_text"), read_key_from="review")
 
     n8 = StatelessOpNode(frontend_op, InvokeMethod("empty"))
@@ -133,7 +81,8 @@ def frontend_df_serial():
     df.add_edge(Edge(n5_b, n6))
     df.add_edge(Edge(n5_c, n6))
 
-    df.add_edge(Edge(n6, n7))
+    df.add_edge(Edge(n6, n7a))
+    df.add_edge(Edge(n7a, n7))
     df.add_edge(Edge(n7, n8))
 
     df.entry = n0

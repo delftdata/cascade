@@ -103,7 +103,7 @@ def deathstar_workload_generator(op):
 
 
 def benchmark_runner(args) -> dict[int, dict]:
-    proc_num, op, messages_per_burst, sleeps_per_burst, sleep_time, seconds_per_burst, bursts = args
+    proc_num, op, requests_per_second, sleep_time, bursts = args
     print(f'Generator: {proc_num} starting')
     client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
     deathstar_generator = deathstar_workload_generator(op)
@@ -113,11 +113,11 @@ def benchmark_runner(args) -> dict[int, dict]:
         sec_start = timer()
 
         # send burst of messages
-        for i in range(messages_per_burst):
+        for i in range(requests_per_second):
 
             # sleep sometimes between messages
-            if i % (messages_per_burst // sleeps_per_burst) == 0:
-                time.sleep(sleep_time)
+            # if i % (messages_per_burst // sleeps_per_burst) == 0:
+            time.sleep(sleep_time)
             event = next(deathstar_generator)
             client.send(event)
         
@@ -126,13 +126,16 @@ def benchmark_runner(args) -> dict[int, dict]:
 
         # wait out the second
         lps = sec_end - sec_start
-        if lps < seconds_per_burst:
+        if lps < 1:
             time.sleep(1 - lps)
         sec_end2 = timer()
         print(f'Latency per burst: {sec_end2 - sec_start} ({b+1}/{bursts})')
         
     end = timer()
-    print(f'Average latency per burst: {(end - start) / bursts} ({seconds_per_burst})')
+    avg_send_latency = (end - start) / bursts
+    print(f'Average send latency per burst for generator {proc_num} was: {avg_send_latency}')
+    if avg_send_latency > 1.1:
+        print(f'This is higher than expected (1). Maybe increase the number of threads?')
     futures = wait_for_futures(client)
     client.close()
     return futures
@@ -190,19 +193,21 @@ def write_dict_to_pkl(futures_dict, filename):
 def main():
     parser = argparse.ArgumentParser(description="Run the benchmark and save results.")
     parser.add_argument("-o", "--output", type=str, default="benchmark_results.pkl", help="Output file name for the results")
-    parser.add_argument("--messages_per_burst", type=int, default=10, help="Number of messages per burst")
-    parser.add_argument("--sleeps_per_burst", type=int, default=10, help="Number of sleep cycles per burst")
-    parser.add_argument("--sleep_time", type=float, default=0.08, help="Sleep time between messages")
-    parser.add_argument("--seconds_per_burst", type=int, default=1, help="Seconds per burst")
-    parser.add_argument("--bursts", type=int, default=100, help="Number of bursts")
+    parser.add_argument("--requests_per_second", type=int, default=10, help="Number of messages per burst")
+    parser.add_argument("--seconds", type=int, default=100, help="Number of seconds to benchmark for")
+    parser.add_argument("--threads", type=int, default=1, help="Number of concurrent threads")
     parser.add_argument("--experiment", type=str, default="baseline", help="Experiment type")
     parser.add_argument("--no_init", action="store_true", help="Don't populate")
     args = parser.parse_args()
     
+    rps_per_thread = int(args.requests_per_second / args.threads)
+    sleep_time = 0.95 / rps_per_thread
+
     EXPERIMENT = args.experiment
     
     print(f"Experiment [{EXPERIMENT}]")
     print(f"Starting with args:\n{args}")
+    print(f"Actual requests per second is {int(rps_per_thread * args.threads)} (due to rounding)")
 
 
     if EXPERIMENT == "baseline":
@@ -229,14 +234,11 @@ def main():
 
     print("Starting benchmark")
 
-
-    threads = 1
-    func_args = [(t, frontend_op, args.messages_per_burst, args.sleeps_per_burst, args.sleep_time, args.seconds_per_burst, args.bursts) for t in range(threads)]
-    with Pool(threads) as p:
+    func_args = [(t, frontend_op, rps_per_thread, sleep_time, args.seconds) for t in range(args.threads)]
+    with Pool(args.threads) as p:
         results = p.map(benchmark_runner, func_args)
 
     results = {k: v for d in results for k, v in d.items()}
-    # results = benchmark_runner(0, frontend_op, args.messages_per_burst, args.sleeps_per_burst, args.sleep_time, args.seconds_per_burst, args.bursts)
 
     print("last result:")
     print(list(results.values())[-1])
@@ -244,7 +246,6 @@ def main():
     r = 0
     for result in results.values():
         if result["ret"] is not None:
-            # print(result)
             r += 1
 
     print(f"{r}/{t} results recieved.")
