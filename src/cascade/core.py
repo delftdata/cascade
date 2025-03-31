@@ -6,11 +6,12 @@ from klara.core.tree_rewriter import AstBuilder
 from klara.core.cfg import Cfg
 
 
+from cascade.dataflow.operator import Block, StatefulOperator, StatelessOperator
 from cascade.wrappers import ClassWrapper
 from cascade.descriptors import ClassDescriptor, MethodDescriptor
-from cascade.frontend.generator.generate_split_functions import GenerateSplittFunctions
+from cascade.frontend.generator.generate_split_functions import GenerateSplitFunctions
 from cascade.frontend.generator.generate_dataflow import GenerateDataflow
-from cascade.dataflow.dataflow import DataFlow 
+from cascade.dataflow.dataflow import DataFlow, Operator 
 from cascade.frontend.intermediate_representation import StatementDataflowGraph
 from cascade.frontend.generator.build_compiled_method_string import BuildCompiledMethodsString
 from cascade.frontend.ast_visitors import ExtractTypeVisitor
@@ -26,6 +27,7 @@ parse_cache: Dict[str, nodes.Module] = {}
 
 registered_classes: list[ClassWrapper] = []
 
+operators: dict[str, Operator] = {}
 
 def cascade(cls, parse_file=True):
     if not isclass(cls):
@@ -52,10 +54,32 @@ def cascade(cls, parse_file=True):
     registered_classes.append(class_wrapper)
 
 
+
+def build(method) -> tuple[DataFlow, list[Block]]:
+    # TODO: implement
+    pass
+
 def init():
     for cls in registered_classes:
+        op_name = cls.class_desc.class_name
+
+        if cls.class_desc.is_stateless:
+            op = StatelessOperator(cls.cls, {}, {})
+        else:
+            op = StatefulOperator(cls.cls, {}, {})
+
+        op: Operator = op
+
+        # generate split functions
         for method in cls.class_desc.methods_dec:
             method.build_dataflow()
+            df, blocks = build(method)
+            op.dataflows[df.name] = df
+            for b in blocks:
+                op.methods[b.name] = b
+
+        operators[op_name] = op
+        
 
 
 def get_entity_names() -> str:
@@ -74,7 +98,7 @@ def get_compiled_methods() -> str:
                 continue
             dataflow_graph: StatementDataflowGraph = method_desc.dataflow
             instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
-            split_functions = GenerateSplittFunctions.generate(dataflow_graph, cls_desc.class_name, entities, instance_type_map)
+            split_functions = GenerateSplitFunctions.generate(dataflow_graph, cls_desc.class_name, entities, instance_type_map)
             df: DataFlow = GenerateDataflow.generate(split_functions, instance_type_map)
             class_compiled_methods: str = BuildCompiledMethodsString.build(split_functions)
             compiled_methods.append(class_compiled_methods)

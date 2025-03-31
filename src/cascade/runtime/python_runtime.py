@@ -1,8 +1,8 @@
 from logging import Filter
 import threading
-from typing import Type
+from typing import List, Type, Union
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
-from cascade.dataflow.dataflow import CollectNode, Event, EventResult, InitClass, InvokeMethod, OpNode, SelectAllNode, StatelessOpNode
+from cascade.dataflow.dataflow import CallEntity, CallLocal, CollectNode, Event, EventResult, InitClass, InvokeMethod, OpNode, StatelessOpNode
 from queue import Empty, Queue
 
 class PythonStatefulOperator():
@@ -11,32 +11,26 @@ class PythonStatefulOperator():
         self.states = {}
     
     def process(self, event: Event):
-        assert(isinstance(event.target, OpNode))
-        assert(event.target.entity == self.operator.entity)
+        assert(isinstance(event.target, CallLocal))
+        assert(isinstance(event.dataflow.op, StatefulOperator))
 
-        key = event.variable_map[event.target.read_key_from]
+        key = event.variable_map[event.dataflow.op.keyby]
 
         print(f"PythonStatefulOperator[{self.operator.entity.__name__}[{key}]]: {event}")
 
-        if isinstance(event.target.method_type, InitClass):
+        if isinstance(event.target.method, InitClass):
             result = self.operator.handle_init_class(*event.variable_map.values())
             self.states[key] = result
 
-        elif isinstance(event.target.method_type, InvokeMethod):
+        elif isinstance(event.target.method, InvokeMethod):
             state = self.states[key]
             result = self.operator.handle_invoke_method(
-                event.target.method_type, 
+                event.target.method, 
                 variable_map=event.variable_map, 
                 state=state, 
             )
             self.states[key] = state
-        
-        elif isinstance(event.target.method_type, Filter):
-            raise NotImplementedError()
-    
-        if event.target.assign_result_to is not None:
-            event.variable_map[event.target.assign_result_to] = result
-        
+
         new_events = event.propogate(result)
         if isinstance(new_events, EventResult):
             yield new_events
@@ -48,26 +42,59 @@ class PythonStatelessOperator():
         self.operator = operator
     
     def process(self, event: Event):
-        assert(isinstance(event.target, StatelessOpNode))
+        assert(isinstance(event.target, CallLocal))
 
         print(f"PythonStatelessOperator[{self.operator.dataflow.name}]: {event}")
 
-        if isinstance(event.target.method_type, InvokeMethod):
+        if isinstance(event.target.method, InvokeMethod):
             result = self.operator.handle_invoke_method(
-                event.target.method_type, 
+                event.target.method, 
                 variable_map=event.variable_map, 
             )
         else:
-            raise Exception(f"A StatelessOperator cannot compute event type: {event.target.method_type}")
-        
-        if event.target.assign_result_to is not None:
-            event.variable_map[event.target.assign_result_to] = result
+            raise Exception(f"A StatelessOperator cannot compute event type: {event.target.method}")
         
         new_events = event.propogate(result)
         if isinstance(new_events, EventResult):
             yield new_events
         else:
             yield from new_events
+
+class PythonCollectOperator():
+    def __init__(self):
+        self.state = {}
+
+    def process(self, event: Event):
+        key = event.target.id
+        if key not in self.state:
+            self.state[key] = [event]
+        else:
+            self.state[key].append(event)
+
+        n = len(event.dataflow.get_predecessors(event.target))
+        print(f"PythonCollectOperator: collected {len(self.state[key])}/{n} for event {event._id}")
+
+        if len(self.state[key]) == n:
+            var_map = {}
+            for event in self.state[key]:
+                var_map.update(event.variable_map)
+
+            new_event = Event(
+                target=event.target,
+                variable_map=var_map,
+                dataflow=event.dataflow,
+                _id=event._id,
+                call_stack=event.call_stack,
+                metadata=event.metadata
+            )
+            new_events = new_event.propogate(None)
+            if isinstance(new_events, EventResult):
+                yield new_events
+            else:
+                yield from new_events
+        
+
+
 
 
 class PythonRuntime():
@@ -76,8 +103,9 @@ class PythonRuntime():
         self.events = Queue()
         self.results = Queue()
         self.running = False
-        self.statefuloperators: dict[Type, PythonStatefulOperator] = {}
+        self.statefuloperators: dict[str, PythonStatefulOperator] = {}
         self.statelessoperators: dict[str, PythonStatelessOperator] = {}
+        self.collect = PythonCollectOperator()
 
     def init(self):
         pass
@@ -85,15 +113,21 @@ class PythonRuntime():
     def _consume_events(self):
         self.running = True
         def consume_event(event: Event):
-            if isinstance(event.target, OpNode):
-                yield from self.statefuloperators[event.target.entity].process(event)
-            elif isinstance(event.target, StatelessOpNode):
-                yield from self.statelessoperators[event.target.operator.dataflow.name].process(event)
+            if isinstance(event.target, CallLocal):
+                if isinstance(event.dataflow.op, StatefulOperator):
+                    yield from self.statefuloperators[event.dataflow.op.name()].process(event)
+                else:
+                    yield from self.statelessoperators[event.dataflow.op.name()].process(event)
+            elif isinstance(event.target, CallEntity):
+                new_events = event.propogate(None)
+                print(new_events)
+                if isinstance(new_events, EventResult):
+                    yield new_events
+                else:
+                    yield from new_events
 
-            elif isinstance(event.target, SelectAllNode):
-                raise NotImplementedError()
             elif isinstance(event.target, CollectNode):
-                raise NotImplementedError()
+                yield from self.collect.process(event)
             
     
         events = []
@@ -115,11 +149,11 @@ class PythonRuntime():
     
     def add_operator(self, op: StatefulOperator):
         """Add a `StatefulOperator` to the datastream."""
-        self.statefuloperators[op.entity] = PythonStatefulOperator(op)
+        self.statefuloperators[op.name()] = PythonStatefulOperator(op)
 
     def add_stateless_operator(self, op: StatelessOperator):
         """Add a `StatelessOperator` to the datastream."""
-        self.statelessoperators[op.dataflow.name] = PythonStatelessOperator(op)
+        self.statelessoperators[op.name()] = PythonStatelessOperator(op)
 
     def send(self, event: Event, flush=None):
         self.events.put(event)
@@ -138,12 +172,18 @@ class PythonClientSync:
         self._events = runtime.events
         self.results = {}
              
-    def send(self, event: Event, block=True):
-        self._events.put(event)
+    def send(self, event: Union[Event, List[Event]], block=True):
+        if isinstance(event, list):
+            for e in event:
+                self._events.put(e)
+                id = e._id
+        else:       
+            self._events.put(event)
+            id = event._id
 
         while block:
             er: EventResult = self._results_q.get(block=True)
-            if event._id == er.event_id:
+            if id == er.event_id:
                 self.results[er.event_id] = er.result
                 return er.result
     

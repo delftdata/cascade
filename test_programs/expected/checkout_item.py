@@ -1,6 +1,6 @@
 from typing import Any
 
-from cascade.dataflow.dataflow import DataFlow, Edge, InvokeMethod, OpNode
+from cascade.dataflow.dataflow import CallEntity, CallLocal, DataFlow, Edge, InvokeMethod, OpNode
 from test_programs.target.checkout_item import User, Item
 
 def buy_item_0_compiled(variable_map: dict[str, Any], state: User) -> Any:
@@ -8,20 +8,24 @@ def buy_item_0_compiled(variable_map: dict[str, Any], state: User) -> Any:
 
 
 def buy_item_1_compiled(variable_map: dict[str, Any], state: User) -> Any:
-    item_price_0 = variable_map['item_price_0']
-    state.balance -= item_price_0
+    state.balance -= variable_map['item_price_0']
     return state.balance >= 0
 
 
 def get_price_0_compiled(variable_map: dict[str, Any], state: Item) -> Any:
     return state.price
 
+def item_get_price_df():
+    df = DataFlow("item.get_price")
+    n0 = CallLocal(InvokeMethod("get_price_0_compiled"))
+    df.entry = n0
+    return df
 
 def user_buy_item_df():
     df = DataFlow("user.buy_item")
-    n0 = OpNode(User, InvokeMethod("buy_item_0"), read_key_from="user_key")
-    n1 = OpNode(Item, InvokeMethod("get_price"), assign_result_to="item_price", read_key_from="item_key")
-    n2 = OpNode(User, InvokeMethod("buy_item_1"), read_key_from="user_key")
+    n0 = CallLocal(InvokeMethod("buy_item_0_compiled"))
+    n1 = CallEntity(item_get_price_df(), {}, "item_price_0")
+    n2 = CallLocal(InvokeMethod("buy_item_1_compiled"))
     df.add_edge(Edge(n0, n1))
     df.add_edge(Edge(n1, n2))
     df.entry = n0

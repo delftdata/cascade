@@ -15,15 +15,16 @@ def upload_text_2_compiled_0(variable_map: dict[str, Any]):
     pass
 
 text_op = StatelessOperator(
+    Text,
     {
         "upload_text_2": upload_text_2_compiled_0
     },
-    None
+    {}
 )
 
 df = DataFlow("upload_text")
 n0 = StatelessOpNode(text_op, InvokeMethod("upload_text_2"))
 n1 = OpNode(ComposeReview, InvokeMethod("upload_text"), read_key_from="review")
 df.add_edge(Edge(n0, n1))
-df.entry = n0
-text_op.dataflow = df
+df.entry = [n0]
+text_op.dataflows[df.name] = df

@@ -1,5 +1,8 @@
 from dataclasses import dataclass
+from typing import Iterable
 import networkx as nx
+
+from cascade.frontend.intermediate_representation.statement import Statement
 
 
 @dataclass
@@ -14,8 +17,11 @@ class StatementDataflowGraph:
     def set_name(self, name: str):
         self.name = name
     
-    def get_nodes(self):
+    def get_nodes(self) -> Iterable[Statement]:
         return self.graph.nodes
     
-    def get_source_node(self):
+    def get_edges(self) -> Iterable[tuple[int, int]]:
+        return [(u.block_num, v.block_num) for u, v in self.graph.edges]
+    
+    def get_source_node(self) -> Statement:
         return next(iter(self.get_nodes()))

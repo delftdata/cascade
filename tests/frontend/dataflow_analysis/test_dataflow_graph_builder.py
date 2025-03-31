@@ -1,7 +1,5 @@
 from textwrap import dedent
 
-import networkx as nx 
-
 from klara.core.cfg import Cfg
 from klara.core import nodes
 
@@ -49,3 +47,24 @@ def test_simple_dataflow_graph():
         (buy_item_body_0, buy_item_body_1)
     ]
     assert_expected_edges(df, expected_edges)
+
+
+def test_ssa():
+    program: str = dedent("""
+    class Test:
+                          
+        def get_total(item1: Stock, item2: Stock):
+            total = Adder.add(item1.get_quantity(), item2.get_quantity())
+            return total""")
+    
+    cfg: Cfg = setup_cfg(program)
+    blocks = cfg.block_list
+    test_class: nodes.Block = blocks[2] 
+    get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
+
+    # TODO: check that the produced ssa code made variables for 
+    #  - item1.get_quantity()
+    #  - item2.get_quantity()
+    df: StatementDataflowGraph = DataflowGraphBuilder.build([get_total] + get_total.body)
+    print(df.graph.nodes)
+    print(df.graph.edges)

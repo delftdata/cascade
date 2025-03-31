@@ -1,16 +1,17 @@
+from cascade.dataflow.operator import Block
 from cascade.frontend.generator.split_function import SplitFunction
-from cascade.dataflow.dataflow import DataFlow, OpNode, InvokeMethod, Edge
+from cascade.dataflow.dataflow import CallEntity, CallLocal, DataFlow, DataflowRef, OpNode, InvokeMethod, Edge
 
 
 class GenerateDataflow:
     """ Generates dataflow
     """
     
-    def __init__(self, split_functions: list[SplitFunction], instance_type_map: dict[str, str]):
+    def __init__(self, split_functions: list[SplitFunction], instance_type_map: dict[str, str], method_name, op_name, args):
         #TODO: add buildcontext that contains class name and target method
         self.split_functions = split_functions
-        class_name = "class_name" # TODO: remove placeholder
-        self.df = DataFlow(class_name)
+        self.df = DataFlow(method_name, op_name, args)
+        self.blocks: list[Block] = []
         self.instance_type_map = instance_type_map
     
     def generate_dataflow(self):
@@ -22,14 +23,20 @@ class GenerateDataflow:
         """
         nodes = []
         for split in self.split_functions:
-            node = OpNode(split.class_name, InvokeMethod(split.method_name))
+            node = CallLocal(InvokeMethod(split.method_name))
             self.df.add_node(node)
             nodes.append([node])
 
             if split.remote_calls:
                 # TODO: instance_name -> correct entity (maybe using buildcontext/ instance type map)
-                next_nodes = [OpNode(self.instance_type_map[remote.instance_name], InvokeMethod(remote.attribute), assign_result_to=remote.target) 
-                              for remote in split.remote_calls]
+                next_nodes = []
+                for remote in split.remote_calls:
+                    df = DataflowRef(self.instance_type_map[remote.instance_name], remote.attribute)
+                    args = df.get_dataflow.args
+                    # TODO: proper variable renaming 
+                    vars = {arg: arg for arg in args}
+                    call = CallEntity(df, vars, assign_result_to=remote.target) 
+                    next_nodes.append(call)
                 nodes.append(next_nodes)
 
         self.df.entry = nodes[0][0]
@@ -47,7 +54,7 @@ class GenerateDataflow:
             split.extract_remote_method_calls()
     
     @classmethod
-    def generate(cls, split_functions: list[SplitFunction], instance_type_map: dict[str, str]) -> DataFlow:
-        c = cls(split_functions, instance_type_map)
+    def generate(cls, split_functions: list[SplitFunction], instance_type_map: dict[str, str], method_name, op_name, args) -> tuple[DataFlow, list[Block]]:
+        c = cls(split_functions, instance_type_map, method_name, op_name, args)
         c.generate_dataflow()
-        return c.df 
+        return c.df, c.blocks

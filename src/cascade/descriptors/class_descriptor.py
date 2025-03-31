@@ -18,6 +18,12 @@ class ClassDescriptor:
         self.module_node: nodes.Module = module_node
         self.class_node: nodes.ClassDef = class_node
         self.methods_dec: list[MethodDescriptor] = methods_dec
+        
+        self.is_stateless = True
+        for method in methods_dec:
+            if method.method_name == "__init__":
+                self.is_stateless = False
+                break
 
     def get_method_by_name(self, name: str):
         return next(m for m in self.methods_dec if m.method_name == name)

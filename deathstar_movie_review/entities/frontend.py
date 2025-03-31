@@ -30,10 +30,11 @@ def compose_compiled_0(variable_map: dict[str, Any]):
 
 
 frontend_op = StatelessOperator(
+    Frontend,
     {
         "empty": compose_compiled_0,
     },
-    None
+    {}
 )
 
 def frontend_df_serial():
@@ -85,7 +86,7 @@ def frontend_df_serial():
     df.add_edge(Edge(n7a, n7))
     df.add_edge(Edge(n7, n8))
 
-    df.entry = n0
+    df.entry = [n0]
     return df
 
 def frontend_df_parallel():
@@ -135,5 +136,5 @@ def frontend_df_parallel():
     df.entry = [n1_a, n3_a, n5_a, n7]
     return df
 
-frontend_op.dataflow = frontend_df_parallel()
+frontend_op.dataflows["compose"] = frontend_df_parallel()
     

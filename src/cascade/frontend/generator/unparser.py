@@ -9,7 +9,17 @@ def unparse(block: RawBasicBlock):
         case nodes.Return:
             return f'return {unparse(block.value)}'
         case nodes.AugAssign:
-            return f'{unparse(block.target)} {block.op}= {unparse(block.value)}'
+            raise NotImplementedError()
+            # TODO: augassign does not work well with ssa
+            # e.g. 
+            # a = 1
+            # a += 2
+            # will generate:
+            # a_0 = 1
+            # a_1 += 2
+            # The last line should be desugared into
+            # a_1 = a_0 + 2 (perhapse with a n Ast.Visitor?)
+            return f'{repr(block.target)} {block.op}= {unparse(block.value)}'
         case nodes.Assign:
             target, *rest = block.targets
             return f'{repr(target)} = {unparse(block.value)}'

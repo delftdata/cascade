@@ -1,7 +1,7 @@
 from klara.core.ssa_visitors import AstVisitor
 from klara.core.nodes import AnnAssign, Arg
 from klara.core import nodes
-
+from klara.core.node_classes import Name
 
 class ExtractTypeVisitor(AstVisitor):
 
@@ -23,11 +23,11 @@ class ExtractTypeVisitor(AstVisitor):
     def visit_arg(self, arg: Arg):
         annotation = arg.annotation
         var_type = type(annotation)
+        # TODO: Find a better way to get the SSA version from Arg
+        id: str = arg.arg + "_0"
         if var_type == nodes.Const:
-            id: str = arg.arg
             self.type_map[id] = annotation.value
         elif annotation != None:
-            id: str = arg.arg
             self.type_map[id] = str(annotation.id)
     
     def get_type_map(self) -> dict[str, str]:

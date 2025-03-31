@@ -35,8 +35,8 @@ class DataflowGraphBuilder:
                 statements.append(statement)
                 variable_getter = VariableGetter.get_variable(b)
                 targets, values = variable_getter.targets, variable_getter.values
-                statement.targets = targets
-                statement.values = values
+                statement.targets = [t.__repr__() for t in targets]
+                statement.values = [v.__repr__() for v in values]
                 contains_attribute, attribute = ContainsAttributeVisitor.check_return_attribute(b)
                 if contains_attribute:
                     if attribute.value.id != 'self':

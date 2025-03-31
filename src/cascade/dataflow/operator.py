@@ -1,5 +1,6 @@
-from abc import ABC
-from typing import Any, Generic, Protocol, Type, TypeVar
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Generic, Mapping, Protocol, Type, TypeVar, Union
 from cascade.dataflow.dataflow import DataFlow, InvokeMethod, Operator
 
 T = TypeVar('T')
@@ -25,6 +26,23 @@ class MethodCall(Generic[T], Protocol):
     def __call__(self, variable_map: dict[str, Any], state: T) -> Any: ...
     """@private"""
 
+@dataclass
+class Block(ABC):
+    var_map_writes: list[str]
+    var_map_reads: list[str]
+    name: str
+    function_call: Union[MethodCall, 'StatelessMethodCall']
+    # TODO: remove "None"
+    raw_method_string: str = None
+
+    def call(self, *args, **kwargs) -> Any:
+        return self.function_call(*args, **kwargs)
+
+
+class StatelessMethodCall(Protocol):
+    def __call__(self, variable_map: dict[str, Any]) -> Any: ...
+    """@private"""
+
 
 class StatefulOperator(Generic[T], Operator):
     """An abstraction for a user-defined python class. 
@@ -38,7 +56,8 @@ class StatefulOperator(Generic[T], Operator):
     methods, instead reading and modifying the underlying class `T` through a 
     state variable, see `handle_invoke_method`.
     """
-    def __init__(self, entity: Type[T], methods: dict[str,  MethodCall[T]], dataflows: dict[str, DataFlow]):
+    # TODO: keyby should not be optional
+    def __init__(self, entity: Type[T], methods: dict[str, Block], dataflows: dict[str, DataFlow], keyby: str=""):
         """Create the StatefulOperator from a class and its compiled methods.
         
         Typically, a class could be comprised of split and non-split methods. Take the following example:
@@ -88,9 +107,10 @@ class StatefulOperator(Generic[T], Operator):
         ```
         """
         # methods maps function name to a function. Ideally this is done once in the object 
-        self._methods = methods
+        self.methods = methods
         self.entity = entity
         self.dataflows = dataflows
+        self.keyby = keyby
         """A mapping from method names to DataFlows"""
        
 
@@ -98,7 +118,7 @@ class StatefulOperator(Generic[T], Operator):
         """Create an instance of the underlying class. Equivalent to `T.__init__(*args, **kwargs)`."""
         return self.entity(*args, **kwargs)
 
-    def handle_invoke_method(self, method: InvokeMethod, variable_map: dict[str, Any], state: T) -> dict[str, Any]:
+    def handle_invoke_method(self, method: InvokeMethod, variable_map: dict[str, Any], state: T):
         """Invoke the method of the underlying class.
         
         The `cascade.dataflow.dataflow.InvokeMethod` object must contain a method identifier 
@@ -106,25 +126,25 @@ class StatefulOperator(Generic[T], Operator):
 
         The state `T` is passed along to the function, and may be modified. 
         """
-        return self._methods[method.method_name](variable_map=variable_map, state=state)
+        return self.methods[method.method_name].call(variable_map=variable_map, state=state)
     
+    def get_method_rw_set(self, method_name: str):
+        return super().get_method_rw_set(method_name)
+
     def name(self):
         return self.entity.__name__
 
-
-class StatelessMethodCall(Protocol):
-    def __call__(self, variable_map: dict[str, Any]) -> Any: ...
-    """@private"""
 
 
 class StatelessOperator(Operator):
     """A StatelessOperator refers to a stateless function and therefore only has
     one dataflow."""
-    def __init__(self, methods: dict[str,  StatelessMethodCall], dataflow: DataFlow):
-        self._methods = methods
-        self.dataflow = dataflow
+    def __init__(self, entity: Type, methods: dict[str,  Block], dataflows: dict[str, DataFlow]):
+        self.entity = entity
+        self.methods = methods
+        self.dataflows = dataflows
        
-    def handle_invoke_method(self, method: InvokeMethod, variable_map: dict[str, Any]) -> dict[str, Any]:
+    def handle_invoke_method(self, method: InvokeMethod, variable_map: dict[str, Any]):
         """Invoke the method of the underlying class.
         
         The `cascade.dataflow.dataflow.InvokeMethod` object must contain a method identifier 
@@ -132,8 +152,12 @@ class StatelessOperator(Operator):
 
         The state `T` is passed along to the function, and may be modified. 
         """
-        return self._methods[method.method_name](variable_map=variable_map)
+        return self.methods[method.method_name].call(variable_map=variable_map)
+    
+    def get_method_rw_set(self, method_name: str):
+        return super().get_method_rw_set(method_name)
     
     def name(self) -> str:
-        return self.dataflow.name
+        return self.entity.__name__
+
 

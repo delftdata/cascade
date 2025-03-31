@@ -13,7 +13,7 @@ from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRe
 from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 from pyflink.datastream.output_tag import OutputTag
 import pickle 
-from cascade.dataflow.dataflow import CollectNode, CollectTarget, Event, EventResult, Filter, InitClass, InvokeMethod, Node, OpNode, SelectAllNode, StatelessOpNode
+from cascade.dataflow.dataflow import CollectNode, CollectTarget, Event, EventResult, InitClass, InvokeMethod, Node, OpNode, StatelessOpNode
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from confluent_kafka import Producer, Consumer
 import logging
