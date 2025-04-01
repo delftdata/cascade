@@ -13,112 +13,32 @@ from typing import Any
 from cascade.dataflow.dataflow import CallEntity, CallLocal, CollectNode, DataFlow, DataflowRef, Edge, Event, InitClass, InvokeMethod, Node, OpNode, StatelessOpNode
 from cascade.dataflow.operator import Block, StatefulOperator, StatelessOperator
 
-class Stock:
-    def __init__(self, item: str, quantity: int):
-        self.item = item
-        self.quantity = quantity
-
-    def get_quantity(self):
-        return self.quantity
-
-def get_quantity_compiled_0(variable_map: dict[str, Any], state: Stock) -> Any:
-    return state.quantity
-
-stock_op = StatefulOperator(
-    Stock,
-    {
-        "get_quantity_compiled_0": Block(function_call=get_quantity_compiled_0, var_map_writes=[], var_map_reads=[], name="get_quantity_compiled")
-    },
-    {},
-    keyby="item"
-)
-
-def stock_op_df():
-    df = DataFlow("get_quantity", "Stock")
-    n0 = CallLocal(InvokeMethod("get_quantity_compiled_0"))
-    df.entry = [n0]
-    return df
-
-def stock_op_init_df():
-    df = DataFlow("__init__", "Stock")
-    n0 = CallLocal(InitClass())
-    df.entry = [n0]
-    return df
-
-stock_op.dataflows["get_quantity"] = stock_op_df()
-stock_op.dataflows["__init__"] = stock_op_init_df()
-
-
-class Adder:
-    @staticmethod
-    def add(a, b):
-        return a + b
-
-def add_compiled_0(variable_map: dict[str, Any]) -> Any:
-    return variable_map["a"] + variable_map["b"]
-    
-adder_op = StatelessOperator(
-    Adder,
-    {
-        "add_compiled_0": Block(function_call=add_compiled_0, var_map_reads=["a", "b"], var_map_writes=[], name="add_compiled_0")
-    },
-    {}
-)
-
-def adder_df():
-    df = DataFlow("add", "Adder")
-    n0 = CallLocal(InvokeMethod("add_compiled_0"))
-    df.entry = [n0]
-    return df
-
-adder_op.dataflows["add"] = adder_df()
-
-
-class Test:
-    @staticmethod
-    def get_total(item1: Stock, item2: Stock):
-        x = item1.get_quantity()
-        y = item2.get_quantity()
-        total_adder = Adder.add(x, y)
-        total = x + y
-        assert total == total_adder
-        return total
-
-def get_total_compiled_0(variable_map):
-    total = variable_map["x"] + variable_map["y"]
-    assert total == variable_map["total_adder"]
-    return total
+import cascade
 
 def test_parallelize():
-    test_op = StatelessOperator(
-        Test,
-        {
-            "get_total_compiled_0": Block(
-                function_call=get_total_compiled_0, 
-                var_map_writes=[], 
-                var_map_reads=["x", "y", "total_adder"],
-                name="get_total_compiled_0")
-        },
-        {}
-    )
+    cascade.core.clear() # clear cascadeds registerd classes.
+    assert not cascade.core.registered_classes, "Registered classes should be empty before importing a Cascade \
+                                                    Module"
+    # import the module
+    import_module_name: str = 'test_ops'
+    exec(f'import tests.optimizations.{import_module_name}')
+    
+    cascade.core.init()
 
-    df = DataFlow("get_total", "Test")
-    n0 = CallEntity(DataflowRef("get_quantity", "Stock"), {"item": "item1"}, assign_result_to="x")
-    n1 = CallEntity(DataflowRef("get_quantity", "Stock"), {"item": "item2"}, assign_result_to="y")
-    n2 = CallEntity(DataflowRef("add", "Adder"), {"a": "x", "b": "y"}, assign_result_to="total_adder")
-    n3 = CallLocal(InvokeMethod("get_total_compiled_0"))
-    df.add_edge(Edge(n0, n1))
-    df.add_edge(Edge(n1, n2))
-    df.add_edge(Edge(n2, n3))
-
-    df.entry = [n0]
-    test_op.dataflows[df.name] = df
+    print(cascade.core.operators)
+    test_op = cascade.core.operators["Test"]
+    adder_op = cascade.core.operators["Adder"]
+    stock_op = cascade.core.operators["Stock"]
+    df = test_op.dataflows["get_total"]
     print(df)
     print(df.nodes)
 
     df = parallelize(test_op.dataflows[df.name])
     df.name = "get_total_parallel"
     test_op.dataflows[df.name] = df
+
+    assert len(test_op.dataflows["get_total_parallel"].entry) == 2
+    assert len(test_op.dataflows["get_total"].entry) == 1
 
     runtime = PythonRuntime()
     runtime.add_stateless_operator(test_op)
@@ -128,20 +48,19 @@ def test_parallelize():
 
     client = PythonClientSync(runtime)
 
-    event = stock_op.dataflows["__init__"].generate_event({"item": "fork", "quantity": 10})
+    event = stock_op.dataflows["__init__"].generate_event({"item": "fork", "quantity": 10}, key="fork")
     result = client.send(event) 
     
 
-    event = stock_op.dataflows["__init__"].generate_event({"item": "spoon", "quantity": 20})
+    event = stock_op.dataflows["__init__"].generate_event({"item": "spoon", "quantity": 20}, key="spoon")
     result = client.send(event) 
 
-    event = test_op.dataflows["get_total"].generate_event({"item1": "fork", "item2": "spoon"})
+    event = test_op.dataflows["get_total"].generate_event({"item1_0": "fork", "item2_0": "spoon"})
     result = client.send(event)
     assert result == 30
 
-    event = test_op.dataflows["get_total_parallel"].generate_event({"item1": "fork", "item2": "spoon"})
+    event = test_op.dataflows["get_total_parallel"].generate_event({"item1_0": "fork", "item2_0": "spoon"})
     result = client.send(event)
-    print(result)
     assert result == 30
 
 @dataclass
@@ -188,7 +107,7 @@ def parallelize(df: DataFlow):
                 except KeyError:
                     pass
 
-    updated = DataFlow(df.name)
+    updated = DataFlow(df.name, df.op_name)
     updated.entry = [n_map[node_id] for node_id in nodes_with_indegree_0]
     prev_node = None
     print(nodes_with_indegree_0)

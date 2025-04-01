@@ -4,14 +4,14 @@ from typing import Dict
 from klara.core import nodes
 from klara.core.tree_rewriter import AstBuilder
 from klara.core.cfg import Cfg
-
+from klara.core.node_classes import Arguments
 
 from cascade.dataflow.operator import Block, StatefulOperator, StatelessOperator
 from cascade.wrappers import ClassWrapper
 from cascade.descriptors import ClassDescriptor, MethodDescriptor
-from cascade.frontend.generator.generate_split_functions import GenerateSplitFunctions
+from cascade.frontend.generator.generate_split_functions import GenerateSplitFunctions, GroupStatements
 from cascade.frontend.generator.generate_dataflow import GenerateDataflow
-from cascade.dataflow.dataflow import DataFlow, Operator 
+from cascade.dataflow.dataflow import CallLocal, DataFlow, DataflowRef, InitClass, Operator 
 from cascade.frontend.intermediate_representation import StatementDataflowGraph
 from cascade.frontend.generator.build_compiled_method_string import BuildCompiledMethodsString
 from cascade.frontend.ast_visitors import ExtractTypeVisitor
@@ -28,6 +28,7 @@ parse_cache: Dict[str, nodes.Module] = {}
 registered_classes: list[ClassWrapper] = []
 
 operators: dict[str, Operator] = {}
+dataflows: dict[DataflowRef, DataFlow] = {}
 
 def cascade(cls, parse_file=True):
     if not isclass(cls):
@@ -54,12 +55,8 @@ def cascade(cls, parse_file=True):
     registered_classes.append(class_wrapper)
 
 
-
-def build(method) -> tuple[DataFlow, list[Block]]:
-    # TODO: implement
-    pass
-
 def init():
+    # First pass: register operators/classes
     for cls in registered_classes:
         op_name = cls.class_desc.class_name
 
@@ -72,13 +69,35 @@ def init():
 
         # generate split functions
         for method in cls.class_desc.methods_dec:
-            method.build_dataflow()
-            df, blocks = build(method)
+            df_ref = DataflowRef(op_name, method.method_name)
+            # Add version number manually
+            args = [f"{str(arg)}_0" for arg in method.method_node.args.args]
+            # TODO: cleaner solution that checks if the function is stateful or not
+            if args[0] == "self_0":
+                args = args[1:]
+            dataflows[df_ref] = DataFlow(method.method_name, op_name, args)
+
+        operators[op_name] = op
+    
+    # Second pass: build dataflows
+    for cls in registered_classes:
+        op_name = cls.class_desc.class_name
+        op = operators[op_name]
+
+        # generate split functions
+        for method in cls.class_desc.methods_dec:
+            if method.method_name == "__init__":
+                df = DataFlow("__init__", op_name)
+                n0 = CallLocal(InitClass())
+                df.entry = [n0]
+                blocks = []
+            else:
+                df, blocks = GroupStatements(method.method_node).build(dataflows, op_name)
+            
             op.dataflows[df.name] = df
             for b in blocks:
                 op.methods[b.name] = b
 
-        operators[op_name] = op
         
 
 

@@ -81,7 +81,6 @@ class GenerateSplitFunctions:
 
     
     def no_remote_dependencies_on_path(self, G: nx.DiGraph, source: Statement, target: Statement) -> bool:
-        print(source, target)
         for path in self.get_all_simple_paths(G, source, target):
             for n in path:
                 if n not in [source, target] and n.is_remote():
@@ -171,12 +170,11 @@ class GroupStatements:
         blocks = []
         block_num = 0
 
-        args = self.function_def.args
-        df = DataFlow("name", "op_name", args)
+        df_ref = DataflowRef(op_name, self.cfg.name)
+        df = dataflows[df_ref]
 
         last_node = None
         for split in self._grouped_statements:
-            print(split)
             if len(split) == 1 and split[0].is_remote():
                 # Entity call
                 node = to_entity_call(split[0], self.type_map, dataflows)
@@ -191,6 +189,7 @@ class GroupStatements:
             if last_node == None:
                 last_node = node
                 df.add_node(node)
+                df.entry = [node]
             else:
                 df.add_edge(Edge(last_node, node))
                 last_node = node

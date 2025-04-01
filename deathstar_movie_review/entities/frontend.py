@@ -8,7 +8,6 @@ from deathstar_movie_review.entities.unique_id import UniqueId, unique_id_op
 from deathstar_movie_review.entities.user import User
 from deathstar_movie_review.entities.text import Text, text_op
 
-
 CHAR_LIMIT = 50
 
 # frontend is made stateless

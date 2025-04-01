@@ -4,7 +4,6 @@ from cascade.dataflow.dataflow import DataFlow, InvokeMethod, OpNode, StatelessO
 from cascade.dataflow.operator import Block, StatelessOperator
 from deathstar_movie_review.entities.compose_review import ComposeReview
 
-
 class UniqueId():
     @staticmethod
     def upload_unique_id_2(review: ComposeReview):

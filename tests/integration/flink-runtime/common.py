@@ -75,10 +75,10 @@ user_op = StatefulOperator(
         "buy_2_items_0": buy_2_items_0_compiled,
         "buy_2_items_1": buy_2_items_1_compiled
     }, 
-   None)
+   {})
 
 item_op = StatefulOperator(
-    Item, {"get_price": get_price_compiled}, None
+    Item, {"get_price": get_price_compiled}, {}
 )
 
 

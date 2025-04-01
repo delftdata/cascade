@@ -1,21 +1,42 @@
 from klara.core.ssa_visitors import AstVisitor
 from klara.core import nodes
 
-class ReplaceName(AstVisitor):
-    """get all variables (ast.name) from given node, separate by targets and values
-     
+class ReplaceSelfWithState(AstVisitor):
+    """Replace attributes with "self" into "state", and remove SSA versioning.
+
+    e.g.:
+    self_0.balance_0 -> state.balance
     """
 
-    def __init__(self, target: str, new: str):
-        self.target: str = target
-        self.new: str = new
+    def __init__(self):
+        self.target: str = "self"
+        self.new: str = "state"
 
     @classmethod
-    def replace(cls, node, target: str, new: str):
-        c = cls(target, new)
+    def replace(cls, node):
+        c = cls()
         c.visit(node)
         return c
 
-    def visit_name(self, node: nodes.Name):
-        if node.id == self.target:
-            node.id = self.new
+    def replace_name(self, node: nodes.Name):
+        node.id = self.new
+        node.version = -1
+
+    def visit_subscript(self, node: nodes.Subscript):
+        # e.g. self_0.data["something"]_0 -> state.data["something"]
+        if isinstance(node.value, nodes.Attribute):
+            name = node.value.value
+            if str(name) == self.target:
+                self.replace_name(name)
+                node.version = -1
+        
+    def visit_assignattribute(self, node: nodes.AssignAttribute):
+        if str(node.value) == self.target :
+            self.replace_name(node.value)
+            node.version = -1
+
+    
+    def visit_attribute(self, node: nodes.Attribute):
+        if str(node.value) == self.target:
+            self.replace_name(node.value)
+            node.version = -1

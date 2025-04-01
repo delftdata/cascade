@@ -37,7 +37,8 @@ def test_split_functions():
     
     dataflows = {
         DataflowRef("Adder", "add"): DataFlow("add", "Adder", ["a", "b"]),
-        DataflowRef("Stock", "get_quantity"): DataFlow("get_quantity", "Item", [])
+        DataflowRef("Stock", "get_quantity"): DataFlow("get_quantity", "Item", []),
+        DataflowRef("Test", "get_total"): DataFlow("get_total", "Test", [])
     }
 
 

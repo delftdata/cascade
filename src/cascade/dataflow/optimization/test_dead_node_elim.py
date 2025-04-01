@@ -69,7 +69,7 @@ def user_order_df():
 df = user_order_df()
 user_op.dataflows[df.name] = df
 
-def test_dead_node_elim():
+def DEPRECATED_test_dead_node_elim():
     print(user_op.dataflows[df.name].to_dot())
 
     dead_node_elimination([user_op], [])

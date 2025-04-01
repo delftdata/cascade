@@ -4,6 +4,7 @@ from typing import Any, Callable, List, Mapping, Optional, Type, Union
 from typing import TYPE_CHECKING
 import uuid
 
+import cascade
 
 if TYPE_CHECKING:
     # Prevent circular imports
@@ -154,8 +155,7 @@ class DataflowRef:
     dataflow_name: str
 
     def get_dataflow(self) -> 'DataFlow':
-        operator: Operator = cascade.operators[operator_name]
-        return operator.dataflows[self.dataflow_name]
+        return cascade.core.dataflows[self]
     
     def __repr__(self) -> str:
         return f"{self.operator_name}.{self.dataflow_name}"
@@ -176,28 +176,40 @@ class CallEntity(Node):
     assign_result_to: Optional[str] = None
     """What variable to assign the result of this node to, if any."""
 
-    key: Optional[str] = None
+    keyby: Optional[str] = None
     """The key, for calls to Stateful Entities"""
 
     def propogate(self, event: 'Event', targets: List[Node], result: Any) -> List['Event']:
         # remap the variable map of event into the new event
         new_var_map = {key: event.variable_map[value] for key, value in self.variable_rename.items()}
-        
+        if self.keyby:
+            new_key = event.variable_map[self.keyby]
+        else:
+            new_key = None
         df = self.dataflow.get_dataflow()
         new_targets = df.entry
         if not isinstance(new_targets, list):
             new_targets = [new_targets]
 
-        # targets: the list of targets to go to after this dataflow node
-        call = CallStackItem(event.dataflow, self.assign_result_to, event.variable_map, targets)
-        event.call_stack.append(call)
+        # Tail call elimination:
+        # "targets" corresponds to where to go after this CallEntity finishes
+        # the call to self.dataflow
+        #
+        # If this CallEntity is a terminal node in event.dataflow, then we don't
+        # need to go back to event.dataflow, so we don't add it to the call stack.
+        # This node is terminal in event.dataflow iff len(targets) == 0
+        if len(targets) > 0:
+            call = CallStackItem(event.dataflow, self.assign_result_to, event.variable_map, targets, key=event.key)
+            event.call_stack.append(call)
+
         return [Event(
                     target,
                     new_var_map, 
                     df,
                     _id=event._id,
                     metadata=event.metadata,
-                    call_stack=event.call_stack)
+                    call_stack=event.call_stack,
+                    key=new_key)
                     
                     for target in new_targets]
 
@@ -209,14 +221,19 @@ class CallLocal(Node):
     def propogate(self, event: 'Event', targets: List[Node], result: Any, **kwargs) -> List['Event']:
         # For simple calls, we only need to change the target.
         # Multiple targets results in multiple events
-        return [Event(
+        events = []
+        for target in targets:
+            ev = Event(
                 target,
                 event.variable_map, 
                 event.dataflow,
+                call_stack=event.call_stack,
                 _id=event._id,
-                metadata=event.metadata)
-                
-                for target in targets]
+                metadata=event.metadata,
+                key=event.key)
+            
+            events.append(ev)
+        return events
 
 @dataclass
 class CollectNode(Node):
@@ -238,7 +255,8 @@ class CollectNode(Node):
                     _id=event._id,
                     call_stack=event.call_stack,
                     # collect_target=ct,
-                    metadata=event.metadata)
+                    metadata=event.metadata,
+                    key=event.key)
                     
                     for target in targets]
 
@@ -283,7 +301,7 @@ class DataFlow:
         self.args = args
 
     def get_operator(self) -> Operator:
-        return cascade.ops[self.op_name]
+        return cascade.core.operators[self.op_name]
 
     def add_node(self, node: Node):
         """Add a node to the Dataflow graph if it doesn't already exist."""
@@ -368,7 +386,7 @@ class DataFlow:
 
     def to_dot(self) -> str:
         """Output the DataFlow graph in DOT (Graphviz) format."""
-        lines = [f"digraph {self.name} {{"]
+        lines = [f"digraph {self.op_name}.{self.name} {{"]
 
         # Add nodes
         for node in self.nodes.values():
@@ -382,18 +400,18 @@ class DataFlow:
         lines.append("}")
         return "\n".join(lines)
     
-    def generate_event(self, variable_map: dict[str, Any]) -> Union['Event', list['Event']]:
+    def generate_event(self, variable_map: dict[str, Any], key: Optional[str] = None) -> Union['Event', list['Event']]:
         if isinstance(self.entry, list):
             assert len(self.entry) != 0
             # give all the events the same id
-            first_event = Event(self.entry[0], variable_map, self)
+            first_event = Event(self.entry[0], variable_map, self, key=key)
             id = first_event._id
-            return [first_event] + [Event(entry, variable_map, self, _id=id) for entry in self.entry[1:]] 
+            return [first_event] + [Event(entry, variable_map, self, _id=id, key=key) for entry in self.entry[1:]] 
         else:
-            return Event(self.entry, variable_map, self)
+            return Event(self.entry, variable_map, self, key=key)
 
     def __repr__(self) -> str:
-        return f"{self.op.name()}.{self.name}" 
+        return f"{self.op_name}.{self.name}" 
     
 @dataclass
 class CollectTarget:
@@ -418,6 +436,8 @@ class CallStackItem:
     var_map: dict[str, str]
     """Variables are saved in the call stack"""
     targets: Union[Node, List[Node]]
+    key: Optional[str] = None
+    """The key to use when coming back"""
 
 @dataclass
 class Event():
@@ -445,6 +465,9 @@ class Event():
 
     metadata: dict = field(default_factory=metadata_dict)
     """Event metadata containing, for example, timestamps for benchmarking"""
+
+    key: Optional[str] = None
+    """If on a Stateful Operator, the key of the state"""
     
     def __post_init__(self):
         if self._id is None:
@@ -453,10 +476,9 @@ class Event():
 
     def propogate(self, result: Any) -> Union['EventResult', list['Event']]:
         """Propogate this event through the Dataflow."""
-        
         targets = self.dataflow.get_neighbors(self.target)
         
-        if len(targets) == 0:
+        if len(targets) == 0 and not isinstance(self.target, CallEntity):
             if len(self.call_stack) > 0:
                 caller = self.call_stack.pop()
 
@@ -467,25 +489,30 @@ class Event():
                 var_map = caller.var_map
                 if (x := caller.assign_result_to):
                     var_map[x] = result
-                
-                return [Event(
-                    target,
-                    var_map, 
-                    new_df,
-                    _id=self._id,
-                    metadata=self.metadata,
+
+                events = []
+
+                for target in new_targets:
+                    ev = Event(
+                        target,
+                        var_map, 
+                        new_df,
+                        _id=self._id,
+                        call_stack=self.call_stack,
+                        metadata=self.metadata,
+                        key=caller.key
                     )
+                    events.append(ev)
                 
-                for target in new_targets]
+                return events
             
 
-            else:    
+            else:   
                 return EventResult(self._id, result, self.metadata)
         else:
             current_node = self.target
-
-
-            return current_node.propogate(self, targets, result)
+            new = current_node.propogate(self, targets, result)
+            return new
 
 @dataclass
 class EventResult():

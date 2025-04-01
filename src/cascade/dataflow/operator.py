@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Generic, Mapping, Protocol, Type, TypeVar, Union
-from cascade.dataflow.dataflow import DataFlow, InvokeMethod, Operator
+from cascade.dataflow.dataflow import CallLocal, DataFlow, InitClass, InvokeMethod, Operator
 
 T = TypeVar('T')
 
@@ -56,8 +56,7 @@ class StatefulOperator(Generic[T], Operator):
     methods, instead reading and modifying the underlying class `T` through a 
     state variable, see `handle_invoke_method`.
     """
-    # TODO: keyby should not be optional
-    def __init__(self, entity: Type[T], methods: dict[str, Block], dataflows: dict[str, DataFlow], keyby: str=""):
+    def __init__(self, entity: Type[T], methods: dict[str, Block], dataflows: dict[str, DataFlow]):
         """Create the StatefulOperator from a class and its compiled methods.
         
         Typically, a class could be comprised of split and non-split methods. Take the following example:
@@ -110,9 +109,7 @@ class StatefulOperator(Generic[T], Operator):
         self.methods = methods
         self.entity = entity
         self.dataflows = dataflows
-        self.keyby = keyby
         """A mapping from method names to DataFlows"""
-       
 
     def handle_init_class(self, *args, **kwargs) -> T:
         """Create an instance of the underlying class. Equivalent to `T.__init__(*args, **kwargs)`."""
@@ -127,7 +124,7 @@ class StatefulOperator(Generic[T], Operator):
         The state `T` is passed along to the function, and may be modified. 
         """
         return self.methods[method.method_name].call(variable_map=variable_map, state=state)
-    
+            
     def get_method_rw_set(self, method_name: str):
         return super().get_method_rw_set(method_name)
 
@@ -152,7 +149,7 @@ class StatelessOperator(Operator):
 
         The state `T` is passed along to the function, and may be modified. 
         """
-        return self.methods[method.method_name].call(variable_map=variable_map)
+        return self.methods[method.method_name].call(variable_map=variable_map, state=None)
     
     def get_method_rw_set(self, method_name: str):
         return super().get_method_rw_set(method_name)

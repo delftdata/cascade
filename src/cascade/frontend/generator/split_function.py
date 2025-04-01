@@ -7,7 +7,7 @@ from cascade.dataflow.dataflow import CallEntity, CallLocal, DataFlow, DataflowR
 from cascade.dataflow.operator import Block
 from cascade.frontend.util import to_camel_case
 from cascade.frontend.intermediate_representation import Statement
-from cascade.frontend.ast_visitors.replace_name import ReplaceName
+from cascade.frontend.ast_visitors.replace_name import ReplaceSelfWithState
 from cascade.frontend.generator.unparser import unparse
 from cascade.frontend.generator.remote_call import RemoteCall
 
@@ -56,7 +56,7 @@ class SplitFunction:
                 block: RawBasicBlock = statement.block
                 if type(block) == nodes.FunctionDef:
                     continue
-                ReplaceName.replace(block, 'self', 'state')
+                ReplaceSelfWithState.replace(block)
                 
                 if type(block) == nodes.Return:
                     body.insert(0,'key_stack.pop()') 
@@ -96,7 +96,7 @@ def to_entity_call(statement: Statement, type_map: dict[str, str], dataflows: di
 
     if operator_var in type_map:
         operator_name = type_map[operator_var]
-        key = str(statement.attribute.value)
+        key = repr(statement.attribute.value)
     else:
         # assume stateless operator
         operator_name = operator_var
@@ -108,7 +108,7 @@ def to_entity_call(statement: Statement, type_map: dict[str, str], dataflows: di
     args.remove(operator_var)
     df_args = dataflows[dataflow].args
 
-    return CallEntity(dataflow, {a: b for a, b in zip(df_args, args, strict=True)}, assign_result_to=assign,key=key)
+    return CallEntity(dataflow, {a: b for a, b in zip(df_args, args, strict=True)}, assign_result_to=assign,keyby=key)
 
 
 class SplitFunction2:
@@ -180,7 +180,7 @@ class SplitFunction2:
             block: RawBasicBlock = statement.block
             if type(block) == nodes.FunctionDef:
                 continue
-            ReplaceName.replace(block, 'self', 'state')
+            ReplaceSelfWithState.replace(block)
             
             body.append(unparse(block))
 

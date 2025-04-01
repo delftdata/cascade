@@ -1,9 +1,10 @@
-from logging import Filter
 import threading
-from typing import List, Type, Union
+from typing import List, Union
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from cascade.dataflow.dataflow import CallEntity, CallLocal, CollectNode, Event, EventResult, InitClass, InvokeMethod, OpNode, StatelessOpNode
 from queue import Empty, Queue
+
+import time
 
 class PythonStatefulOperator():
     def __init__(self, operator: StatefulOperator):
@@ -12,9 +13,8 @@ class PythonStatefulOperator():
     
     def process(self, event: Event):
         assert(isinstance(event.target, CallLocal))
-        assert(isinstance(event.dataflow.op, StatefulOperator))
 
-        key = event.variable_map[event.dataflow.op.keyby]
+        key = event.key
 
         print(f"PythonStatefulOperator[{self.operator.entity.__name__}[{key}]]: {event}")
 
@@ -44,7 +44,7 @@ class PythonStatelessOperator():
     def process(self, event: Event):
         assert(isinstance(event.target, CallLocal))
 
-        print(f"PythonStatelessOperator[{self.operator.dataflow.name}]: {event}")
+        print(f"PythonStatelessOperator[{self.operator.name()}]: {event}")
 
         if isinstance(event.target.method, InvokeMethod):
             result = self.operator.handle_invoke_method(
@@ -111,16 +111,22 @@ class PythonRuntime():
         pass
 
     def _consume_events(self):
+        try:
+            self._run()
+        except Exception as e:
+            self.running = False
+            raise e
+
+    def _run(self):
         self.running = True
         def consume_event(event: Event):
             if isinstance(event.target, CallLocal):
-                if isinstance(event.dataflow.op, StatefulOperator):
-                    yield from self.statefuloperators[event.dataflow.op.name()].process(event)
+                if event.dataflow.op_name in self.statefuloperators:
+                    yield from self.statefuloperators[event.dataflow.op_name].process(event)
                 else:
-                    yield from self.statelessoperators[event.dataflow.op.name()].process(event)
+                    yield from self.statelessoperators[event.dataflow.op_name].process(event)
             elif isinstance(event.target, CallEntity):
                 new_events = event.propogate(None)
-                print(new_events)
                 if isinstance(new_events, EventResult):
                     yield new_events
                 else:
@@ -142,7 +148,6 @@ class PythonRuntime():
 
             for ev in consume_event(event):
                 if isinstance(ev, EventResult):
-                    print(ev)
                     self.results.put(ev)
                 elif isinstance(ev, Event):
                     events.append(ev)
@@ -171,6 +176,7 @@ class PythonClientSync:
         self._results_q = runtime.results
         self._events = runtime.events
         self.results = {}
+        self.runtime = runtime
              
     def send(self, event: Union[Event, List[Event]], block=True):
         if isinstance(event, list):
@@ -181,8 +187,11 @@ class PythonClientSync:
             self._events.put(event)
             id = event._id
 
-        while block:
-            er: EventResult = self._results_q.get(block=True)
+        while block and self.runtime.running:
+            try:
+                er: EventResult = self._results_q.get(block=False, timeout=0.1)
+            except Empty:
+                continue
             if id == er.event_id:
                 self.results[er.event_id] = er.result
                 return er.result
