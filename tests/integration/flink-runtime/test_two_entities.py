@@ -1,7 +1,6 @@
 """A test script for dataflows with multiple operators"""
 
 from pyflink.datastream.data_stream import CloseableIterator
-from common import Item, User, item_op, user_op
 from cascade.dataflow.dataflow import Event, EventResult, InitClass, InvokeMethod, OpNode
 from cascade.runtime.flink_runtime import FlinkOperator, FlinkRuntime
 import pytest

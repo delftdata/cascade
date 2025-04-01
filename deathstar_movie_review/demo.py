@@ -56,7 +56,7 @@ def main():
     create_topics(IN_TOPIC, OUT_TOPIC, INTERNAL_TOPIC)
 
     runtime = FlinkRuntime(IN_TOPIC, OUT_TOPIC, internal_topic=INTERNAL_TOPIC)
-    runtime.init(kafka_broker=KAFKA_FLINK_BROKER,bundle_time=5, bundle_size=10)
+    runtime.init(kafka_broker=KAFKA_FLINK_BROKER,bundle_time=5, bundle_size=10, thread_mode=True)
        
     print(f"Creating dataflow [{EXPERIMENT}]")
 

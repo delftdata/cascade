@@ -13,12 +13,12 @@ from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRe
 from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 from pyflink.datastream.output_tag import OutputTag
 import pickle 
-from cascade.dataflow.dataflow import CollectNode, CollectTarget, Event, EventResult, InitClass, InvokeMethod, Node, OpNode, StatelessOpNode
+from cascade.dataflow.dataflow import CallLocal, CollectNode, CollectTarget, Event, EventResult, InitClass, InvokeMethod, Node, OpNode, StatelessOpNode
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from confluent_kafka import Producer, Consumer
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("cascade")
 logger.setLevel("INFO")
 console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -61,12 +61,13 @@ class FanOutOperator(ProcessFunction):
 
         logger.debug("FanOut Enter")
 
-        if isinstance(event.target, StatelessOpNode):
-            logger.debug(event.target.operator.name())
-            tag = self.stateless_ops[event.target.operator.name()]
-        elif isinstance(event.target, OpNode):
-            logger.debug(event.target.entity.__name__)
-            tag = self.stateful_ops[event.target.entity.__name__]
+        if isinstance(event.target, CallLocal):
+            logger.debug(event)
+            tag = self.stateful_ops[event.dataflow.op_name]
+            # TODO: stateless ops
+        # elif isinstance(event.target, OpNode):
+        #     logger.debug(event.target.entity.__name__)
+        #     tag = self.stateful_ops[event.target.entity.__name__]
         else:
             logger.error(f"FanOut: Wrong target: {event}")
             return
@@ -91,17 +92,17 @@ class FlinkOperator(KeyedProcessFunction):
         event = profile_event(event, "STATEFUL OP INNER ENTRY")
 
         # should be handled by filters on this FlinkOperator    
-        assert(isinstance(event.target, OpNode)) 
-        logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Processing: {event.target.method_type}")
+        assert(isinstance(event.target, CallLocal)) 
+        logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Processing: {event.target.method}")
         
-        assert(event.target.entity == self.operator.entity) 
+        assert(event.dataflow.op_name == self.operator.name()) 
         key = ctx.get_current_key()
         assert(key is not None)
 
-        if isinstance(event.target.method_type, InitClass):
+        if isinstance(event.target.method, InitClass):
             # TODO: compile __init__ with only kwargs, and pass the variable_map itself
             # otherwise, order of variable_map matters for variable assignment
-            result = self.operator.handle_init_class(*event.variable_map.values())
+            result = self.operator.handle_init_class(**event.variable_map)
 
             # Register the created key in FlinkSelectAllOperator
             if SELECT_ALL_ENABLED:
@@ -114,8 +115,11 @@ class FlinkOperator(KeyedProcessFunction):
                 logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Registering key: {register_key_event}")
                 yield register_key_event
 
-            self.state.update(pickle.dumps(result))
-        elif isinstance(event.target.method_type, InvokeMethod):
+            print(result)
+            print(type(result))
+            # self.state.update(pickle.dumps(result))
+            self.state.update(pickle.dumps(result.__dict__))
+        elif isinstance(event.target.method, InvokeMethod):
             state = self.state.value()
             if state is None:
                 # try to create the state if we haven't been init'ed
@@ -123,7 +127,7 @@ class FlinkOperator(KeyedProcessFunction):
             else:
                 state = pickle.loads(state)
 
-            result = self.operator.handle_invoke_method(event.target.method_type, variable_map=event.variable_map, state=state)
+            result = self.operator.handle_invoke_method(event.target.method, variable_map=event.variable_map, state=state)
             
             # TODO: check if state actually needs to be updated
             if state is not None:
@@ -136,8 +140,8 @@ class FlinkOperator(KeyedProcessFunction):
         #         return
         #     result = event.key_stack[-1] 
         
-        if event.target.assign_result_to is not None:
-            event.variable_map[event.target.assign_result_to] = result
+        # if event.target.assign_result_to is not None:
+        #     event.variable_map[event.target.assign_result_to] = result
 
         new_events = event.propogate(result)
         if isinstance(new_events, EventResult):
@@ -389,7 +393,12 @@ class FlinkRuntime():
 
         Warning that this does not work well with run(collect=True)!"""
 
-    def init(self, kafka_broker="localhost:9092", bundle_time=1, bundle_size=5, parallelism=None):
+        self.stateless_operators: list[FlinkStatelessOperator] = []
+        self.stateful_operators: list[FlinkOperator] = []
+        """List of stateful operator streams, which gets appended at `add_operator`."""
+
+
+    def init(self, kafka_broker="localhost:9092", bundle_time=1, bundle_size=5, parallelism=None, thread_mode=False):
         """Initialise & configure the Flink runtime. 
         
         This function is required before any other calls, and requires a Kafka 
@@ -416,7 +425,14 @@ class FlinkRuntime():
         config.set_integer("python.fn-execution.bundle.time", bundle_time)
         config.set_integer("python.fn-execution.bundle.size", bundle_size)
         
-        config.set_string("python.execution-mode", "thread")
+        # Thread mode has significant performance impacts, see
+        # https://flink.apache.org/2022/05/06/exploring-the-thread-mode-in-pyflink/
+        # In short:
+        #   much faster single threaded python performance
+        #   GIL becomes an issue if running higher parallelism on the same taskmanager
+        #   can't use with minicluster (e.g. while testing)
+        if thread_mode:
+            config.set_string("python.execution-mode", "thread")
 
         # METRICS
         if METRICS:
@@ -540,10 +556,6 @@ class FlinkRuntime():
         self.event_stream = event_stream
 
 
-        self.stateless_operators: list[FlinkStatelessOperator] = []
-        self.stateful_operators: list[FlinkOperator] = []
-        """List of stateful operator streams, which gets appended at `add_operator`."""
-
         logger.debug("FlinkRuntime initialized")
     
     def add_operator(self, op: StatefulOperator):
@@ -571,7 +583,8 @@ class FlinkRuntime():
         # create the fanout operator
         stateful_tags = { op.operator.name() : OutputTag(op.operator.name()) for op in self.stateful_operators}
         stateless_tags = { op.operator.name() : OutputTag(op.operator.name()) for op in self.stateless_operators}
-        logger.debug(f"{stateful_tags.items()}")
+        logger.debug(f"Stateful tags: {stateful_tags.items()}")
+        logger.debug(f"Stateless tags: {stateless_tags.items()}")
         fanout = self.event_stream.process(FanOutOperator(stateful_tags, stateless_tags)).name("FANOUT OPERATOR").disable_chaining()
 
         # create the streams
@@ -581,7 +594,7 @@ class FlinkRuntime():
             op_stream = (
                 fanout
                     .get_side_output(tag)
-                    .key_by(lambda e: e.variable_map[e.target.read_key_from])
+                    .key_by(lambda e: e.key)
                     .process(flink_op)
                     .name("STATEFUL OP: " + flink_op.operator.name())
             )

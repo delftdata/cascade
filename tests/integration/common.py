@@ -1,14 +1,16 @@
 from typing import Any
 from cascade.dataflow.dataflow import CollectNode, CollectTarget, DataFlow, Edge, InvokeMethod, OpNode
 from cascade.runtime.flink_runtime import StatefulOperator
+import cascade
 
+@cascade.cascade
 class User:
     def __init__(self, key: str, balance: int):
         self.key: str = key
         self.balance: int = balance
 
     def update_balance(self, amount: int) -> bool:
-        self.balance += amount
+        self.balance = self.balance + amount
         return self.balance >= 0
     
     def get_balance(self) -> int:
@@ -16,18 +18,17 @@ class User:
     
     def buy_item(self, item: 'Item') -> bool:
         item_price = item.get_price() # SSA
-        self.balance -= item_price
+        self.balance = self.balance - item_price
         return self.balance >= 0
     
     def buy_2_items(self, item1: 'Item', item2: 'Item') -> bool:
         item1_price = item1.get_price() # SSA
         item2_price = item2.get_price() # SSA
-        self.balance -= item1_price + item2_price
+        self.balance = self.balance - item1_price + item2_price
         return self.balance >= 0
     
-    def __repr__(self):
-        return f"User(key='{self.key}', balance={self.balance})"
-    
+   
+@cascade.cascade
 class Item:
     def __init__(self, key: str, price: int):
         self.key: str = key
@@ -35,10 +36,7 @@ class Item:
 
     def get_price(self) -> int:
         return self.price
-    
-    def __repr__(self):
-        return f"Item(key='{self.key}', price={self.price})"
-
+  
 def update_balance_compiled(variable_map: dict[str, Any], state: User) -> Any:
     state.balance += variable_map["amount"]
     return state.balance >= 0
