@@ -59,20 +59,20 @@ class FanOutOperator(ProcessFunction):
     def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
         event = profile_event(event, "FanOut")
 
-        logger.debug("FanOut Enter")
+        logger.debug(f"FanOut Event entered: {event._id}")
 
         if isinstance(event.target, CallLocal):
             logger.debug(event)
-            tag = self.stateful_ops[event.dataflow.op_name]
-            # TODO: stateless ops
-        # elif isinstance(event.target, OpNode):
-        #     logger.debug(event.target.entity.__name__)
-        #     tag = self.stateful_ops[event.target.entity.__name__]
+            if event.dataflow.op_name in self.stateful_ops:
+                tag = self.stateful_ops[event.dataflow.op_name]
+            else:
+                tag = self.stateless_ops[event.dataflow.op_name]
+
         else:
             logger.error(f"FanOut: Wrong target: {event}")
             return
         
-        logger.debug(f"Fanout: {tag.tag_id}")
+        logger.debug(f"Fanout Event routed to: {tag.tag_id}")
         yield tag, event
         
 
@@ -112,26 +112,29 @@ class FlinkOperator(KeyedProcessFunction):
                     None,
                     _id = event._id
                 )
-                logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Registering key: {register_key_event}")
+                logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Registering key: {register_key_event}")
                 yield register_key_event
 
-            print(result)
-            print(type(result))
             # self.state.update(pickle.dumps(result))
             self.state.update(pickle.dumps(result.__dict__))
+
         elif isinstance(event.target.method, InvokeMethod):
             state = self.state.value()
             if state is None:
-                # try to create the state if we haven't been init'ed
-                state = self.operator.handle_init_class(*event.variable_map.values())
-            else:
-                state = pickle.loads(state)
+                logger.error(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: State does not exist for key {ctx.get_current_key()}")
+                raise KeyError
+            
+            state = pickle.loads(state)
+            # TODO: don't create a new class instance, instead use the __dict__ directly in self.state
+            # requires changes in compilation, i.e. self.balance -> state["balance"]
+            state = self.operator.entity(**state)
 
             result = self.operator.handle_invoke_method(event.target.method, variable_map=event.variable_map, state=state)
             
             # TODO: check if state actually needs to be updated
             if state is not None:
-                self.state.update(pickle.dumps(state))
+                # TODO: "state" should already be the __dict__ itself.
+                self.state.update(pickle.dumps(state.__dict__))
         # Filter targets are used in cases of [hotel for hotel in Hotel.__all__() *if hotel....*]
         # elif isinstance(event.target.method_type, Filter):
         #     state = pickle.loads(self.state.value())
@@ -143,13 +146,14 @@ class FlinkOperator(KeyedProcessFunction):
         # if event.target.assign_result_to is not None:
         #     event.variable_map[event.target.assign_result_to] = result
 
-        new_events = event.propogate(result)
-        if isinstance(new_events, EventResult):
-            logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Returned {new_events}")
-            yield new_events
+        new_events = list(event.propogate(result))
+        
+        if len(new_events) == 1 and isinstance(new_events[0], EventResult):
+            logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Returned {new_events[0]}")
         else:
-            logger.debug(f"FlinkOperator {self.operator.entity.__name__}[{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
-            yield from new_events
+            logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
+        
+        yield from new_events
 
 class FlinkStatelessOperator(ProcessFunction):
     """Wraps an `cascade.dataflow.datflow.StatefulOperator` in a KeyedProcessFunction so that it can run in Flink.
@@ -159,28 +163,27 @@ class FlinkStatelessOperator(ProcessFunction):
         self.operator = operator
 
 
-    def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
+    def process_element(self, event: Event, ctx: ProcessFunction.Context):
         event = profile_event(event, "STATELESS OP INNER ENTRY")
 
-        # should be handled by filters on this FlinkOperator    
-        assert(isinstance(event.target, StatelessOpNode)) 
+        assert isinstance(event.target, CallLocal)
 
-        logger.debug(f"FlinkStatelessOperator {self.operator.dataflow.name}[{event._id}]: Processing: {event.target.method_type}")
-        if isinstance(event.target.method_type, InvokeMethod):
-            result = self.operator.handle_invoke_method(event.target.method_type, variable_map=event.variable_map)  
+        logger.debug(f"FlinkStatelessOperator {self.operator.name()}[{event._id}]: Processing: {event.target.method}")
+        if isinstance(event.target.method, InvokeMethod):
+            result = self.operator.handle_invoke_method(event.target.method, variable_map=event.variable_map)  
         else:
             raise Exception(f"A StatelessOperator cannot compute event type: {event.target.method_type}")
         
-        if event.target.assign_result_to is not None:
-            event.variable_map[event.target.assign_result_to] = result
 
-        new_events = event.propogate(result)
-        if isinstance(new_events, EventResult):
-            logger.debug(f"FlinkStatelessOperator {self.operator.dataflow.name}[{event._id}]: Returned {new_events}")
-            yield new_events
+        new_events = list(event.propogate(result))
+        
+        if len(new_events) == 1 and isinstance(new_events[0], EventResult):
+            logger.debug(f"FlinkStatelessOperator {self.operator.name()}[{event._id}]: Returned {new_events[0]}")
         else:
-            logger.debug(f"FlinkStatelessOperator {self.operator.dataflow.name}[{event._id}]: Propogated {len(new_events)} new Events")
-            yield from new_events
+            logger.debug(f"FlinkStatelessOperator {self.operator.name()}[{event._id}]: Propogated {len(new_events)} new Events")
+        
+        yield from new_events
+
 
 class FlinkSelectAllOperator(KeyedProcessFunction):
     """A process function that yields all keys of a certain class"""
@@ -225,15 +228,6 @@ class Result(ABC):
     their computation."""
     pass
 
-@dataclass
-class Arrived(Result):
-    val: Any
-
-@dataclass
-class NotArrived(Result):
-    pass
-
-
 class FlinkCollectOperator(KeyedProcessFunction):
     """Flink implementation of a merge operator."""
     def __init__(self): 
@@ -241,49 +235,36 @@ class FlinkCollectOperator(KeyedProcessFunction):
 
     def open(self, runtime_context: RuntimeContext):
         descriptor = ValueStateDescriptor("merge_state", Types.PICKLED_BYTE_ARRAY())
-        self.collection = runtime_context.get_state(descriptor)
+        self.var_map = runtime_context.get_state(descriptor)
 
     def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
         event = profile_event(event, "COLLECT OP INNER ENTRY")
 
-        collection: list[Result] = self.collection.value()
+        var_map_num_items = self.var_map.value()
         logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Processing: {event}")
         
-        # for now we assume there is only 1 merge per df
-        assert event.collect_target is not None
-        entry: CollectTarget = event.collect_target
-        target_node: CollectNode = entry.target_node
+        total_events = len(event.dataflow.get_predecessors(event.target))
 
         # Add to the map
-        if collection == None:
+        if var_map_num_items == None:
             logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Creating map")
-            collection = [NotArrived()] * entry.total_items
-        logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Processed event {entry.result_idx} ({entry.total_items})")
-        
-        result = None
-        try:
-            result = event.variable_map[target_node.read_results_from]
-        except KeyError:
-            pass
+            combined_var_map = {}
+            num_items = 0
+        else:
+            combined_var_map, num_items = var_map_num_items
 
-        collection[entry.result_idx] = Arrived(result)
-        self.collection.update(collection)
+        combined_var_map.update(event.variable_map)
+        num_items += 1
+        logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Recieved {num_items}/{total_events} Events")
+
         
-        # Yield events if the merge is done
-        if all([isinstance(r, Arrived) for r in collection]):
+        if num_items == total_events:
             logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Yielding collection")
-            
-            collection = [r.val for r in collection if r.val is not None] # type: ignore (r is of type Arrived)
-            event.variable_map[target_node.assign_result_to] = collection
-            new_events = event.propogate(collection)
-
-            self.collection.clear() 
-            if isinstance(new_events, EventResult):
-                logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Returned {new_events}")
-                yield new_events
-            else:
-                logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
-                yield from new_events
+            event.variable_map = combined_var_map
+            yield from event.propogate(None)
+            self.var_map.clear()
+        else:
+            self.var_map.update((combined_var_map, num_items))
 
 
 class ByteSerializer(SerializationSchema, DeserializationSchema):
@@ -723,17 +704,23 @@ class FlinkClientSync:
     def flush(self):
         self.producer.flush()
 
-    def send(self, event: Union[Event, list[Event]], flush=False) -> int:
+    def send(self, event: Union[Event, list[Event]], flush=False, block=False) -> int:
         if isinstance(event, list):
             for e in event:
                 id = self._send(e)
         else:
             id = self._send(event)
 
-        if flush:
+        if flush or block:
             self.producer.flush()
 
-        return id
+        if block:
+            while (r := self._futures[id]["ret"]) == None:
+                time.sleep(0.1)
+
+            return r.result
+        else:
+            return id
 
 
     def _send(self, event: Event) -> int:

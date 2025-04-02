@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Mapping, Optional, Type, Union
+from typing import Any, Callable, Iterable, List, Mapping, Optional, Type, Union
 from typing import TYPE_CHECKING
 import uuid
 
@@ -241,13 +241,8 @@ class CollectNode(Node):
     
     It will aggregate incoming edges and output them as a list to the outgoing edge.
     Their actual implementation is runtime-dependent."""
-    assign_result_to: str = ""
-    """The variable name in the variable map that will contain the collected result."""
-    read_results_from: str = ""
-    """The variable name in the variable map that the individual items put their result in."""
 
     def propogate(self, event: 'Event', targets: List[Node], result: Any, **kwargs) -> List['Event']:
-        # collect_targets = [event.collect_target for i in range(len(targets))]
         return [Event(
                     target,
                     event.variable_map, 
@@ -400,15 +395,24 @@ class DataFlow:
         lines.append("}")
         return "\n".join(lines)
     
-    def generate_event(self, variable_map: dict[str, Any], key: Optional[str] = None) -> Union['Event', list['Event']]:
-        if isinstance(self.entry, list):
+    def generate_event(self, variable_map: dict[str, Any], key: Optional[str] = None) -> list['Event']:
             assert len(self.entry) != 0
             # give all the events the same id
             first_event = Event(self.entry[0], variable_map, self, key=key)
             id = first_event._id
-            return [first_event] + [Event(entry, variable_map, self, _id=id, key=key) for entry in self.entry[1:]] 
-        else:
-            return Event(self.entry, variable_map, self, key=key)
+            events = [first_event] + [Event(entry, variable_map, self, _id=id, key=key) for entry in self.entry[1:]] 
+            
+            # TODO: propogate at "compile time" instead of doing this every time
+            local_events = []
+            for ev in events:
+                if isinstance(ev.target, CallEntity):
+                    local_events.extend(ev.propogate(None))
+                else:
+                    local_events.append(ev)
+
+            return local_events
+
+       
 
     def __repr__(self) -> str:
         return f"{self.op_name}.{self.name}" 
@@ -474,10 +478,12 @@ class Event():
             # Assign a unique ID 
             self._id = uuid.uuid4().int
 
-    def propogate(self, result: Any) -> Union['EventResult', list['Event']]:
+    def propogate(self, result: Any) -> Iterable[Union['EventResult', 'Event']]:
         """Propogate this event through the Dataflow."""
         targets = self.dataflow.get_neighbors(self.target)
         
+        events = []
+
         if len(targets) == 0 and not isinstance(self.target, CallEntity):
             if len(self.call_stack) > 0:
                 caller = self.call_stack.pop()
@@ -490,8 +496,6 @@ class Event():
                 if (x := caller.assign_result_to):
                     var_map[x] = result
 
-                events = []
-
                 for target in new_targets:
                     ev = Event(
                         target,
@@ -502,18 +506,21 @@ class Event():
                         metadata=self.metadata,
                         key=caller.key
                     )
-                    events.append(ev)
-                
-                return events
-            
+                    events.append(ev)            
 
             else:   
-                return EventResult(self._id, result, self.metadata)
+                yield EventResult(self._id, result, self.metadata)
+                return
         else:
             current_node = self.target
-            new = current_node.propogate(self, targets, result)
-            return new
+            events = current_node.propogate(self, targets, result)
 
+        for event in events:
+            if isinstance(event.target, CallEntity):
+                # recursively propogate CallEntity events
+                yield from event.propogate(None)
+            else:
+                yield event
 @dataclass
 class EventResult():
     event_id: int

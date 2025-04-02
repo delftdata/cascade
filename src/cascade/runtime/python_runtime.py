@@ -79,22 +79,13 @@ class PythonCollectOperator():
             for event in self.state[key]:
                 var_map.update(event.variable_map)
 
-            new_event = Event(
-                target=event.target,
-                variable_map=var_map,
-                dataflow=event.dataflow,
-                _id=event._id,
-                call_stack=event.call_stack,
-                metadata=event.metadata
-            )
-            new_events = new_event.propogate(None)
+            event.variable_map = var_map
+            new_events = event.propogate(None)
             if isinstance(new_events, EventResult):
                 yield new_events
             else:
                 yield from new_events
         
-
-
 
 
 class PythonRuntime():

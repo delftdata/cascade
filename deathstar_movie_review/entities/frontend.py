@@ -93,7 +93,7 @@ def frontend_df_parallel():
     # It could be more useful to have a "Dataflow" node
     df = DataFlow("compose")
     # n0 = StatelessOpNode(frontend_op, InvokeMethod("empty"))
-    ct = CollectNode(assign_result_to="results", read_results_from="dummy")
+    ct = CollectNode()
 
     # Upload Unique DF
     n1_a = StatelessOpNode(unique_id_op, InvokeMethod("upload_unique"))
