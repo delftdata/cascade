@@ -13,7 +13,7 @@ from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRe
 from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 from pyflink.datastream.output_tag import OutputTag
 import pickle 
-from cascade.dataflow.dataflow import CallLocal, CollectNode, CollectTarget, Event, EventResult, InitClass, InvokeMethod, Node, OpNode, StatelessOpNode
+from cascade.dataflow.dataflow import CallLocal, CollectNode, Event, EventResult, InitClass, InvokeMethod, Node
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from confluent_kafka import Producer, Consumer
 import logging
@@ -100,8 +100,6 @@ class FlinkOperator(KeyedProcessFunction):
         assert(key is not None)
 
         if isinstance(event.target.method, InitClass):
-            # TODO: compile __init__ with only kwargs, and pass the variable_map itself
-            # otherwise, order of variable_map matters for variable assignment
             result = self.operator.handle_init_class(**event.variable_map)
 
             # Register the created key in FlinkSelectAllOperator

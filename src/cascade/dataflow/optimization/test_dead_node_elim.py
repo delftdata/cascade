@@ -1,6 +1,6 @@
 from typing import Any
 
-from cascade.dataflow.dataflow import DataFlow, Edge, InvokeMethod, OpNode
+from cascade.dataflow.dataflow import DataFlow, Edge, InvokeMethod
 from cascade.dataflow.operator import StatefulOperator
 from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
 from cascade.dataflow.optimization.dead_node_elim import is_no_op
@@ -66,8 +66,8 @@ def user_order_df():
     df.entry = n0
     return df
 
-df = user_order_df()
-user_op.dataflows[df.name] = df
+# df = user_order_df()
+# user_op.dataflows[df.name] = df
 
 def DEPRECATED_test_dead_node_elim():
     print(user_op.dataflows[df.name].to_dot())

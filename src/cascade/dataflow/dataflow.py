@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, List, Mapping, Optional, Type, Union
+from typing import Any, Iterable, List, Mapping, Optional, Union
 from typing import TYPE_CHECKING
 import uuid
 
@@ -8,8 +8,6 @@ import cascade
 
 if TYPE_CHECKING:
     # Prevent circular imports
-    from cascade.dataflow.operator import StatelessOperator
-    from cascade.dataflow.operator import StatefulOperator
     from cascade.dataflow.operator import Block
     
 
@@ -58,97 +56,6 @@ class Node(ABC):
     def propogate(self, event: 'Event', targets: list['Node'], result: Any, **kwargs) -> list['Event']:
         pass
 
-@dataclass
-class OpNode(Node):
-    """A node in a `Dataflow` corresponding to a method call of a `StatefulOperator`. 
-    
-    A `Dataflow` may reference the same entity multiple times. 
-    The `StatefulOperator` that this node belongs to is referenced by `entity`."""
-    operator: 'StatefulOperator'
-    method_type: Union[InitClass, InvokeMethod]
-    read_key_from: str
-    """Which variable to take as the key for this StatefulOperator"""
-
-    assign_result_to: Optional[str] = field(default=None)
-    """What variable to assign the result of this node to, if any."""
-    is_conditional: bool = field(default=False)
-    """Whether or not the boolean result of this node dictates the following path."""
-    collect_target: Optional['CollectTarget'] = field(default=None)
-    """Whether the result of this node should go to a CollectNode."""
-
-    def propogate(self, event: 'Event', targets: List[Node], result: Any) -> list['Event']:
-        return OpNode.propogate_opnode(self, event, targets, result)
-
-    @staticmethod
-    def propogate_opnode(node: Union['OpNode', 'StatelessOpNode'], event: 'Event', targets: list[Node], 
-                         result: Any) -> list['Event']:
-        num_targets = 1 if node.is_conditional else len(targets)
-
-        if event.collect_target is not None:
-            # Assign new collect targets
-            collect_targets = [
-                event.collect_target for i in range(num_targets)
-            ]
-        else:
-            # Keep old collect targets
-            collect_targets = [node.collect_target for i in range(num_targets)]
-
-        if node.is_conditional:
-            edges = event.dataflow.nodes[event.target.id].outgoing_edges
-            true_edges = [edge for edge in edges if edge.if_conditional]
-            false_edges = [edge for edge in edges if not edge.if_conditional]
-            if not (len(true_edges) == len(false_edges) == 1):
-                print(edges)
-            assert len(true_edges) == len(false_edges) == 1
-            target_true = true_edges[0].to_node
-            target_false = false_edges[0].to_node
-
-            assert len(collect_targets) == 1, "num targets should be 1"
-            ct = collect_targets[0]
-
-            return [Event(
-                target_true if result else target_false,
-                event.variable_map,
-                event.dataflow,
-                _id=event._id,
-                collect_target=ct,
-                metadata=event.metadata)
-            ]
-
-        else:
-            return [Event(
-                    target,
-                    event.variable_map, 
-                    event.dataflow,
-                    _id=event._id,
-                    collect_target=ct,
-                    metadata=event.metadata)
-                    
-                    for target, ct in zip(targets, collect_targets)]
-    
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.entity.__name__}, {self.method_type})"
-
-@dataclass
-class StatelessOpNode(Node):
-    """A node in a `Dataflow` corresponding to a method call of a `StatelessOperator`. 
-    
-    A `Dataflow` may reference the same `StatefulOperator` multiple times. 
-    The `StatefulOperator` that this node belongs to is referenced by `cls`."""
-    operator: 'StatelessOperator'
-    method_type: InvokeMethod
-    """Which variable to take as the key for this StatefulOperator"""
-    
-    assign_result_to: Optional[str] = None
-    """What variable to assign the result of this node to, if any."""
-    is_conditional: bool = False
-    """Whether or not the boolean result of this node dictates the following path."""
-    collect_target: Optional['CollectTarget'] = None
-    """Whether the result of this node should go to a CollectNode."""
-
-    def propogate(self, event: 'Event', targets: List[Node], result: Any) -> List['Event']:
-        return OpNode.propogate_opnode(self, event, targets, result)
-    
 @dataclass
 class DataflowRef:
     operator_name: str
@@ -286,14 +193,17 @@ class DataFlow:
         collect-- [item1_price, item2_price] -->user2;
     ```
     """
-    # TODO: op should not be optional
-    def __init__(self, name: str, op_name: str=None, args: list[str]=None):
+
+    def __init__(self, name: str, op_name: str, args: Optional[list[str]]=None):
         self.name: str = name
         self.adjacency_list: dict[int, list[int]] = {}
         self.nodes: dict[int, Node] = {}
         self.entry: List[Node] = []
         self.op_name = op_name
-        self.args = args
+        if args:
+            self.args: list[str] = args
+        else:
+            self.args = []
 
     def get_operator(self) -> Operator:
         return cascade.core.operators[self.op_name]
@@ -329,11 +239,6 @@ class DataFlow:
             return  # Node doesn't exist in the graph
 
 
-        # if isinstance(node, OpNode) or isinstance(node, StatelessOpNode):
-        #     assert not node.is_conditional, "there's no clear way to remove a conditional node"
-        #     assert not node.assign_result_to, "can't delete node whose result is used"
-        #     assert not node.collect_target, "can't delete node which has a collect_target"
-
         # Find parents (nodes that have edges pointing to this node)
         parents = [parent_id for parent_id, children in self.adjacency_list.items() if node.id in children]
 
@@ -364,7 +269,6 @@ class DataFlow:
             child_node = self.nodes[child_id]
             self.remove_edge(node, child_node)
         
-
         # Remove the node from the adjacency list and nodes dictionary
         del self.adjacency_list[node.id]
         del self.nodes[node.id]
@@ -413,8 +317,7 @@ class DataFlow:
             return local_events
 
        
-
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return f"{self.op_name}.{self.name}" 
     
 @dataclass

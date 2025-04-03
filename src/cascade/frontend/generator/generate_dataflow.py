@@ -1,6 +1,6 @@
 from cascade.dataflow.operator import Block
 from cascade.frontend.generator.split_function import SplitFunction
-from cascade.dataflow.dataflow import CallEntity, CallLocal, DataFlow, DataflowRef, OpNode, InvokeMethod, Edge
+from cascade.dataflow.dataflow import CallEntity, CallLocal, DataFlow, DataflowRef, InvokeMethod, Edge
 
 
 class GenerateDataflow:

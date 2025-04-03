@@ -48,26 +48,3 @@ def test_split_functions():
     df, blocks = sf.build(dataflows, "Test")
     print(df.to_dot())
     print(blocks)
-    
-
-
-# [
-#     Statement(block_num=0, block=Function get_total in scope Class "Test" in scope Module, targets=[item1_0, item2_0], values=[item1_0, item2_0], remote_call=False, attribute=None), 
-#     Statement(block_num=1, block=Assign: (a_0,) = 10, targets=[a_0], values=[], remote_call=False, attribute=None), 
-#     Statement(block_num=2, block=Assign: (b_0,) = BinOp: a_0 + 3, targets=[b_0], values=[a_0], remote_call=False, attribute=None), 
-#     Statement(block_num=3, block=Assign: (x_0,) = Call: item1_0.get_quantity(()), targets=[x_0], values=[item1_0], remote_call=True, attribute=item1_0.get_quantity), 
-#     Statement(block_num=4, block=Assign: (y_0,) = Call: item2_0.get_quantity(()), targets=[y_0], values=[item2_0], remote_call=True, attribute=item2_0.get_quantity), 
-#     Statement(block_num=5, block=Assign: (total_0,) = Call: Adder.add((x_0, y_0)), targets=[total_0], values=[Adder, x_0, y_0], remote_call=True, attribute=Adder.add), 
-#     Statement(block_num=6, block=<klara.core.node_classes.AugAssign object at 0x7f48dda7a990>, targets=[total_1], values=[a_0, b_0], remote_call=False, attribute=None),
-#     Statement(block_num=7, block=<klara.core.node_classes.AugAssign object at 0x7f48dda7a950>, targets=[total_2], values=[], remote_call=False, attribute=None), 
-#     Statement(block_num=8, block=<klara.core.node_classes.Return object at 0x7f4982f81a90>, targets=[], values=[total_2], remote_call=False, attribute=None)]
-
-# [
-#     (0, 3), 
-#     (0, 4), 
-#     (3, 5), 
-#     (4, 5), 
-#     (1, 2), 
-#     (1, 6), 
-#     (2, 6), 
-#     (7, 8)]

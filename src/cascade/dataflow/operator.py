@@ -32,8 +32,7 @@ class Block(ABC):
     var_map_reads: list[str]
     name: str
     function_call: Union[MethodCall, 'StatelessMethodCall']
-    # TODO: remove "None"
-    raw_method_string: str = None
+    raw_method_string: str
 
     def call(self, *args, **kwargs) -> Any:
         return self.function_call(*args, **kwargs)

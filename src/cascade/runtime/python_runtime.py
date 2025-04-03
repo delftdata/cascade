@@ -1,7 +1,7 @@
 import threading
 from typing import List, Union
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
-from cascade.dataflow.dataflow import CallEntity, CallLocal, CollectNode, Event, EventResult, InitClass, InvokeMethod, OpNode, StatelessOpNode
+from cascade.dataflow.dataflow import CallEntity, CallLocal, CollectNode, Event, EventResult, InitClass, InvokeMethod
 from queue import Empty, Queue
 
 import time
