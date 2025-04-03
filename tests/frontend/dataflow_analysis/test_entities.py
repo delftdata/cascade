@@ -1,17 +1,13 @@
 from dataclasses import dataclass
 from textwrap import dedent
 
-import networkx as nx 
 
 from klara.core.cfg import Cfg
 from klara.core import nodes
 
 from cascade.dataflow.dataflow import CallEntity, CallLocal, DataFlow, DataflowRef
-from cascade.frontend.ast_visitors.extract_type_visitor import ExtractTypeVisitor
-from cascade.frontend.dataflow_analysis.dataflow_graph_builder import DataflowGraphBuilder
-from cascade.frontend.generator.generate_split_functions import GenerateSplitFunctions, GroupStatements
-from cascade.frontend.generator.split_function import SplitFunction2, to_entity_call
-from cascade.frontend.intermediate_representation import Statement, StatementDataflowGraph
+
+from cascade.frontend.generator.generate_split_functions import GroupStatements
 from cascade.frontend.util import setup_cfg
 
 def test_call_entity():
@@ -141,7 +137,7 @@ class ComposeReview:
         
     
     @dataclass
-    class User:
+    class ComposeReview:
         req_id: str
         review_data: dict
 
@@ -149,6 +145,6 @@ class ComposeReview:
 
     print(blocks[0].raw_method_string)
 
-    user = User("req", {})
-    func({"review_id_0": 123}, user.__dict__)
-    assert user.review_data["review_id"] == 123
+    compose_review = ComposeReview("req", {})
+    func({"review_id_0": 123}, compose_review.__dict__)
+    assert compose_review.review_data["review_id"] == 123

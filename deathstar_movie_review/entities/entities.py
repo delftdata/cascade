@@ -3,9 +3,9 @@ from cascade import cascade
 
 @cascade
 class ComposeReview:
-    def __init__(self, req_id: str, review_data: dict={}, **kwargs): # **args is a temporary hack to allow for creation of composereview on the fly
+    def __init__(self, req_id: str, **kwargs): # **args is a temporary hack to allow for creation of composereview on the fly
         self.req_id = req_id
-        self.review_data = review_data
+        self.review_data = {}
 
     def upload_unique_id(self, review_id: int):
         self.review_data["review_id"] = review_id
