@@ -1,8 +1,6 @@
 from cascade.frontend.util import setup_cfg
 from cascade.frontend.ast_visitors.variable_getter import VariableGetter
 
-from klara.core.tree_rewriter import AstBuilder
-
 
 def test_variable_getter():
         code = "item_price = item.get_price()"

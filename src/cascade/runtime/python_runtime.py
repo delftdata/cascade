@@ -20,7 +20,7 @@ class PythonStatefulOperator():
 
         if isinstance(event.target.method, InitClass):
             result = self.operator.handle_init_class(*event.variable_map.values())
-            self.states[key] = result
+            self.states[key] = result.__dict__
 
         elif isinstance(event.target.method, InvokeMethod):
             state = self.states[key]

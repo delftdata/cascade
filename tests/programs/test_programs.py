@@ -61,12 +61,12 @@ def test_checkout_item():
 
     event = user_op.dataflows["buy_item"].generate_event({"item_0": "fork"}, key=user.__key__())
     result = client.send(event)
-    assert runtime.statefuloperators["User"].states["test"].balance == 5
+    assert runtime.statefuloperators["User"].states["test"]["balance"] == 5
     assert result 
 
     event = user_op.dataflows["buy_item"].generate_event({"item_0": "spoon"}, key=user.__key__())
     result = client.send(event)
-    assert runtime.statefuloperators["User"].states["test"].balance == -15
+    assert runtime.statefuloperators["User"].states["test"]["balance"] == -15
     assert not result 
 
     

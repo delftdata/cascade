@@ -99,7 +99,8 @@ class User:
     df, blocks = sf.build(dataflows, "User")
 
     assert len(blocks) == 1
-        
+    func = blocks[0].call
+    print(blocks[0].raw_method_string)
     
     @dataclass
     class User:
@@ -109,10 +110,10 @@ class User:
     func = blocks[0].call
 
     user = User("a", 20)
-    func({"item_price_0": 10}, user)
+    func({"item_price_0": 10}, user.__dict__)
     assert user.balance == 10
 
-    func({"item_price_0": 13}, user)
+    func({"item_price_0": 13}, user.__dict__)
     assert user.balance == -3
 
 def test_dict_state():
@@ -149,5 +150,5 @@ class ComposeReview:
     print(blocks[0].raw_method_string)
 
     user = User("req", {})
-    func({"review_id_0": 123}, user)
+    func({"review_id_0": 123}, user.__dict__)
     assert user.review_data["review_id"] == 123

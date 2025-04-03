@@ -113,7 +113,6 @@ class FlinkOperator(KeyedProcessFunction):
                 logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Registering key: {register_key_event}")
                 yield register_key_event
 
-            # self.state.update(pickle.dumps(result))
             self.state.update(pickle.dumps(result.__dict__))
 
         elif isinstance(event.target.method, InvokeMethod):
@@ -123,16 +122,12 @@ class FlinkOperator(KeyedProcessFunction):
                 raise KeyError
             
             state = pickle.loads(state)
-            # TODO: don't create a new class instance, instead use the __dict__ directly in self.state
-            # requires changes in compilation, i.e. self.balance -> state["balance"]
-            state = self.operator.entity(**state)
 
             result = self.operator.handle_invoke_method(event.target.method, variable_map=event.variable_map, state=state)
             
             # TODO: check if state actually needs to be updated
             if state is not None:
-                # TODO: "state" should already be the __dict__ itself.
-                self.state.update(pickle.dumps(state.__dict__))
+                self.state.update(pickle.dumps(state))
         # Filter targets are used in cases of [hotel for hotel in Hotel.__all__() *if hotel....*]
         # elif isinstance(event.target.method_type, Filter):
         #     state = pickle.loads(self.state.value())
@@ -579,7 +574,6 @@ class FlinkRuntime():
             )
             self.stateful_op_streams.append(op_stream)
 
-
         self.stateless_op_streams = []
         for flink_op in self.stateless_operators:
             tag = stateless_tags[flink_op.operator.name()]
@@ -647,6 +641,10 @@ class FlinkRuntime():
         else:
             logger.info("FlinkRuntime starting (sync)")
             self.env.execute("Cascade: Flink Runtime")
+    
+    def close(self):
+        assert self.env is not None, "FlinkRuntime must first be initialised with `init()`."
+        self.env.close()
 
 class FlinkClientSync:
     def __init__(self, input_topic="input-topic", output_topic="output-topic", kafka_url="localhost:9092", start_consumer_thread: bool = True):
