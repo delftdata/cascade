@@ -3,8 +3,25 @@ import itertools
 import ast
 import difflib
 
-import importlib
+import cascade
+from cascade.dataflow.operator import StatefulOperator, StatelessOperator
+from cascade.runtime.python_runtime import PythonClientSync, PythonRuntime
 
+def init_python_runtime(file_name: str) -> tuple[PythonRuntime, PythonClientSync]:     
+    cascade.core.clear() 
+    import_module_name: str = f'tests.integration.pyruntime.{file_name.strip(".py")}'
+    exec(f'import {import_module_name}')
+    cascade.core.init()
+
+    runtime = PythonRuntime()
+    for op in cascade.core.operators.values():
+        if isinstance(op, StatefulOperator):
+            runtime.add_operator(op)
+        elif isinstance(op, StatelessOperator):
+            runtime.add_stateless_operator(op)
+    
+    runtime.run()
+    return runtime, PythonClientSync(runtime)
 
 # colors
 red = lambda text: f"\033[38;2;255;0;0m{text}\033[38;2;255;255;255m"
