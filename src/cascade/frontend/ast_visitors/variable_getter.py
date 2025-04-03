@@ -1,4 +1,5 @@
 from klara.core.ssa_visitors import AstVisitor
+from klara.core import nodes
 
 class VariableGetter(AstVisitor):
     """get all variables (ast.name) from given node, separate by targets and values
@@ -21,3 +22,6 @@ class VariableGetter(AstVisitor):
 
     def visit_assignname(self, node):
         self.targets.append(node)
+
+    def visit_assignattribute(self, node: nodes.AssignAttribute):
+        self.targets.append(node.value)

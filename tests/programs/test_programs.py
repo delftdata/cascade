@@ -38,9 +38,6 @@ def test_checkout_item():
     cascade.core.init()
     assert cascade.core.registered_classes, "The Cascade module classes should be registered at this point."
 
-    for op in cascade.core.operators.values():
-        print(op.methods)
-
     runtime, client = init_python_runtime()
     item_op = cascade.core.operators["Item"]
     user_op = cascade.core.operators["User"]
