@@ -7,10 +7,10 @@ from klara.core import nodes
 
 from cascade.dataflow.dataflow import DataFlow, DataflowRef
 from cascade.frontend.ast_visitors.extract_type_visitor import ExtractTypeVisitor
-from cascade.frontend.dataflow_analysis.dataflow_graph_builder import DataflowGraphBuilder
+from cascade.frontend.dataflow_analysis.dataflow_graph_builder import ControlFlowGraphBuilder
 from cascade.frontend.generator.generate_split_functions import GenerateSplitFunctions, GroupStatements
 from cascade.frontend.generator.split_function import SplitFunction2, to_entity_call
-from cascade.frontend.intermediate_representation import Statement, StatementDataflowGraph
+from cascade.frontend.intermediate_representation import Statement, ControlFlowGraph
 from cascade.frontend.util import setup_cfg
 
 def test_split_functions():

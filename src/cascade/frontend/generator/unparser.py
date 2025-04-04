@@ -2,8 +2,6 @@ from klara.core.cfg import RawBasicBlock
 from klara.core import nodes
 
 
-from cascade.frontend. intermediate_representation import Statement
-
 def unparse(block: RawBasicBlock):
     match type(block):
         case nodes.Return:
@@ -29,5 +27,18 @@ def unparse(block: RawBasicBlock):
             return repr(block)
         case nodes.BinOp:
             return f'{unparse(block.left)} {block.op} {unparse(block.right)}'
+        case nodes.Subscript:
+            return str(block)
+        case nodes.Const:
+            return str(block)
+        case nodes.Compare:
+            return str(block)
+        case nodes.Bool:
+            return repr(block)
+        case nodes.If:
+            print(block.test, block.body, block.orelse)
+            raise NotImplementedError(type(block))
+        case nodes.FunctionDef:
+            return str(block).replace('"', "'")
         case _:
             return str(block)

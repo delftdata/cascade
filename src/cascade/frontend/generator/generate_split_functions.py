@@ -6,8 +6,8 @@ import networkx as nx
 from cascade.dataflow.dataflow import DataFlow, DataflowRef, Edge
 from cascade.dataflow.operator import Block
 from cascade.frontend.ast_visitors.extract_type_visitor import ExtractTypeVisitor
-from cascade.frontend.dataflow_analysis.dataflow_graph_builder import DataflowGraphBuilder
-from cascade.frontend.intermediate_representation import Statement, StatementDataflowGraph
+from cascade.frontend.dataflow_analysis.dataflow_graph_builder import ControlFlowGraphBuilder
+from cascade.frontend.intermediate_representation import Statement, ControlFlowGraph
 from cascade.frontend.generator.split_function import SplitFunction, SplitFunction2, to_entity_call
 
 
@@ -15,8 +15,8 @@ from klara.core import nodes
 
 class GenerateSplitFunctions:
 
-    def __init__(self, dataflow_graph: StatementDataflowGraph, class_name: str, entity_map: dict[str, str]):
-        self.dataflow_graph: StatementDataflowGraph = dataflow_graph
+    def __init__(self, dataflow_graph: ControlFlowGraph, class_name: str, entity_map: dict[str, str]):
+        self.dataflow_graph: ControlFlowGraph = dataflow_graph
         self.class_name: str = class_name
         self.entity_map: dict[str, str] = entity_map # {"instance_name": "EntityType"}
         self.dataflow_node_map = dict()
@@ -96,7 +96,7 @@ class GenerateSplitFunctions:
         return nx.all_simple_paths(G, source=source, target=target)
 
     @classmethod
-    def generate(cls, dataflow_graph: StatementDataflowGraph, class_name: str, entity_map: dict[str, str]):
+    def generate(cls, dataflow_graph: ControlFlowGraph, class_name: str, entity_map: dict[str, str]):
         c = cls(dataflow_graph, class_name, entity_map)
         c.generate_split_functions()
         return c.split_functions
@@ -113,7 +113,7 @@ class GroupStatements:
         self.function_def = function_def
 
     def build_cfg(self):
-        cfg: StatementDataflowGraph = DataflowGraphBuilder.build([self.function_def] + self.function_def.body)
+        cfg: ControlFlowGraph = ControlFlowGraphBuilder.build([self.function_def] + self.function_def.body)
         self.type_map = ExtractTypeVisitor.extract(self.function_def)
         cfg.name = self.function_def.name
 

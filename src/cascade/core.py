@@ -12,7 +12,7 @@ from cascade.descriptors import ClassDescriptor, MethodDescriptor
 from cascade.frontend.generator.generate_split_functions import GenerateSplitFunctions, GroupStatements
 from cascade.frontend.generator.generate_dataflow import GenerateDataflow
 from cascade.dataflow.dataflow import CallLocal, DataFlow, DataflowRef, InitClass, Operator 
-from cascade.frontend.intermediate_representation import StatementDataflowGraph
+from cascade.frontend.intermediate_representation import ControlFlowGraph
 from cascade.frontend.generator.build_compiled_method_string import BuildCompiledMethodsString
 from cascade.frontend.ast_visitors import ExtractTypeVisitor
 
@@ -115,7 +115,7 @@ def get_compiled_methods() -> str:
         for method_desc in cls_desc.methods_dec:
             if method_desc.method_name == '__init__':
                 continue
-            dataflow_graph: StatementDataflowGraph = method_desc.dataflow
+            dataflow_graph: ControlFlowGraph = method_desc.dataflow
             instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
             split_functions = GenerateSplitFunctions.generate(dataflow_graph, cls_desc.class_name, entities, instance_type_map)
             df: DataFlow = GenerateDataflow.generate(split_functions, instance_type_map)

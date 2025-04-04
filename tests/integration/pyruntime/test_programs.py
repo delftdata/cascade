@@ -73,3 +73,28 @@ def test_operator_chaining():
     event = a_op.dataflows["call_c_thru_b"].generate_event({"b_0": "bbb", "c_0": "ccc"}, key="aaa")
     result = client.send(event)
     assert result == 84
+
+def test_branches():
+    file_name = "if_else_branches.py"
+
+    runtime, client = init_python_runtime(file_name)
+    item_op = cascade.core.operators["Item"]
+    user_op = cascade.core.operators["User"]
+
+    for df in user_op.dataflows.values():
+        print(df.to_dot())
+
+    event = item_op.dataflows["__init__"].generate_event({"item_name": "fork", "price": 10}, key="fork")
+    result = client.send(event)
+    assert result.price == 10
+    assert result.item_name == "fork"
+
+    event = item_op.dataflows["__init__"].generate_event({"item_name": "spoon", "price": 20}, key="spoon")
+    result = client.send(event)
+    assert result.price == 20
+    assert result.__key__() == "spoon"
+
+    event = user_op.dataflows["__init__"].generate_event({"username": "test", "balance": 15}, key="test")
+    user = client.send(event)
+    assert user.balance == 15
+    assert user.__key__() == "test"
