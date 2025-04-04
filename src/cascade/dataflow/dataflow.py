@@ -4,24 +4,10 @@ from typing import Any, Iterable, List, Mapping, Optional, Union
 from typing import TYPE_CHECKING
 import uuid
 
-import cascade
-
 if TYPE_CHECKING:
-    # Prevent circular imports
-    from cascade.dataflow.operator import Block
-    
+    from cascade.frontend.generator.split_function import LocalBlock
+    from cascade.dataflow.operator import Operator
 
-class Operator(ABC):
-    dataflows: dict[str, 'DataFlow']
-    methods: Mapping[str, 'Block']
-
-    @abstractmethod
-    def name(self) -> str:
-        pass
-
-    def get_method_rw_set(self, method_name: str) -> tuple[list[str], list[str]]:
-        method = self.methods[method_name]
-        return method.var_map_reads, method.var_map_writes
 
 @dataclass
 class InitClass:
@@ -56,13 +42,17 @@ class Node(ABC):
     def propogate(self, event: 'Event', targets: list['Node'], result: Any, **kwargs) -> list['Event']:
         pass
 
+class IfNode(Node):
+    def propogate(self, event: 'Event', targets: List[Node], result: Any, **kwargs) -> List['Event']:
+        return super().propogate(event, targets, result, **kwargs)
+
 @dataclass
 class DataflowRef:
     operator_name: str
     dataflow_name: str
 
-    def get_dataflow(self) -> 'DataFlow':
-        return cascade.core.dataflows[self]
+    # def get_dataflow(self) -> 'DataFlow':
+    #     return cascade_core.dataflows[self]
     
     def __repr__(self) -> str:
         return f"{self.operator_name}.{self.dataflow_name}"
@@ -204,15 +194,19 @@ class DataFlow:
             self.args: list[str] = args
         else:
             self.args = []
+        self.blocks: dict[str, 'LocalBlock'] = {}
 
-    def get_operator(self) -> Operator:
-        return cascade.core.operators[self.op_name]
+    # def get_operator(self) -> Operator:
+    #     return cascade.core.operators[self.op_name]
 
     def add_node(self, node: Node):
         """Add a node to the Dataflow graph if it doesn't already exist."""
         if node.id not in self.adjacency_list:
             self.adjacency_list[node.id] = []
             self.nodes[node.id] = node
+
+    def add_block(self, block: 'LocalBlock'):
+        self.blocks[block.get_method_name()] = block
 
     def add_edge(self, edge: Edge):
         """Add an edge to the Dataflow graph. Nodes that don't exist will be added to the graph automatically."""
@@ -222,6 +216,11 @@ class DataFlow:
             self.adjacency_list[edge.from_node.id].append(edge.to_node.id)
             edge.from_node.outgoing_edges.append(edge)
 
+    def add_edge_refs(self, u: int, v: int, if_conditional=None):
+        """Add an edge using node IDs"""
+        from_node = self.nodes[u]
+        to_node = self.nodes[v]
+        self.add_edge(Edge(from_node, to_node, if_conditional=if_conditional))
     
     def remove_edge(self, from_node: Node, to_node: Node):
         """Remove an edge from the Dataflow graph."""
@@ -357,15 +356,13 @@ class Event():
     """A mapping of variable identifiers to values. 
     If `target` is an `OpNode` this map should include the variables needed for that method."""
 
-    dataflow: DataFlow
+    dataflow: DataflowRef
     """The Dataflow that this event is a part of. If None, it won't propogate.
     This might be remove in the future in favour of a routing operator."""
 
     _id: int = field(default=None) # type: ignore (will get updated in __post_init__ if unset)
     """Unique ID for this event. Except in `propogate`, this `id` should not be set."""
     
-    # collect_target: Optional[CollectTarget] = field(default=None)
-    # """Tells each mergenode (key) how many events to merge on"""
 
     call_stack: List[CallStackItem] = field(default_factory=list)
     """Target used when dataflow is done, used for recursive dataflows."""

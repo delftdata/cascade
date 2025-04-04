@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Optional
 import networkx as nx
 
 from cascade.frontend.generator.unparser import unparse
@@ -16,10 +16,11 @@ class ControlFlowGraph:
     instance_type_map: dict[str, str] = None # {"instance_name": "EntityType"}
     method_name: str = None
     _last_node: list[Statement] = None
-    _source_node: Statement = None
+    _sources: list[Statement] = None
 
     def __init__(self):
         self.graph = nx.DiGraph()
+        self._sources = []
         self._last_node = []
 
     def set_name(self, name: str):
@@ -28,8 +29,8 @@ class ControlFlowGraph:
     def append_statement(self, node: Statement):
         self.graph.add_node(node)
 
-        if not self._source_node:
-            self._source_node = node
+        if len(self._sources) == 0:
+            self._sources = [node]
 
         for ln in self._last_node:
             self.graph.add_edge(ln, node)
@@ -41,11 +42,36 @@ class ControlFlowGraph:
             return
         for node in subgraph.get_nodes():
             self.graph.add_node(node)
-        for edge in subgraph.get_edges():
+        for edge in subgraph.graph.edges:
             self.graph.add_edge(edge[0], edge[1])
-        assert subgraph._source_node
-        self.graph.add_edge(to_node, subgraph._source_node, **edge_attr)
+        assert len((s:=subgraph.get_source_nodes())) == 1
+        self.graph.add_edge(to_node, s[0], **edge_attr)
         
+    def remove_node(self, node: Statement):
+        """Remove a node and it's adjacent edges"""
+        if node == self.get_single_source():
+            succ = list(self.graph.successors(node))
+            # assert len(succ) <= 1, "Can't remove node with more than one successor"
+            self._sources = succ
+        if node == self._last_node:
+            raise NotImplementedError("Update last node")
+        
+        self.graph.remove_node(node)
+
+    def get_single_source(self,) -> Optional[Statement]:
+        """Get the source of this CFG. Returns None if there are 0 or 2+ sources."""
+        if len(self._sources) == 1:
+            return self._sources[0]
+        else:
+            return None
+
+    def get_single_successor(self, node: Statement) -> Optional[Statement]:
+        """Get the successor of this node. Returns None if there are 0 or 2+ successors."""
+        succ = list(self.graph.successors(node))
+        if len(succ) == 1:
+            return succ[0]
+        else:
+            return None
 
     def get_nodes(self) -> Iterable[Statement]:
         return self.graph.nodes
@@ -53,8 +79,8 @@ class ControlFlowGraph:
     def get_edges(self) -> Iterable[tuple[int, int]]:
         return [(u.block_num, v.block_num) for u, v in self.graph.edges]
     
-    def get_source_node(self) -> Statement:
-        return self._source_node
+    def get_source_nodes(self) -> list[Statement]:
+        return self._sources
     
     def to_dot(self) -> str:    
         dot_string = "digraph CFG {\n"

@@ -1,11 +1,24 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Generic, Mapping, Protocol, Type, TypeVar, Union
-from cascade.dataflow.dataflow import CallLocal, DataFlow, InitClass, InvokeMethod, Operator
+from typing import Any, Generic, Mapping, Protocol, Type, TypeVar, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cascade.frontend.generator.split_function import LocalBlock
+    from cascade.dataflow.dataflow import DataFlow, InvokeMethod
 
 T = TypeVar('T')
 
+class Operator(ABC):
+    dataflows: dict[str, 'DataFlow']
+    methods: Mapping[str, 'LocalBlock']
 
+    @abstractmethod
+    def name(self) -> str:
+        pass
+
+    def get_method_rw_set(self, method_name: str) -> tuple[set[str], set[str]]:
+        method = self.methods[method_name]
+        return method.reads, method.writes
+    
 class MethodCall(Generic[T], Protocol):
     """A helper class for type-safety of method signature for compiled methods.
 
@@ -26,16 +39,27 @@ class MethodCall(Generic[T], Protocol):
     def __call__(self, variable_map: dict[str, Any], state: T) -> Any: ...
     """@private"""
 
-@dataclass
-class Block(ABC):
-    var_map_writes: list[str]
-    var_map_reads: list[str]
-    name: str
-    function_call: Union[MethodCall, 'StatelessMethodCall']
-    raw_method_string: str
+# @dataclass
+# class LocalBlock:
+#     var_map_writes: set[str]
+#     var_map_reads: set[str]
+#     name: str
+#     statements: 
+#     function_call: Union[MethodCall, 'StatelessMethodCall']
+#     raw_method_string: str
 
-    def call(self, *args, **kwargs) -> Any:
-        return self.function_call(*args, **kwargs)
+#     def call(self, *args, **kwargs) -> Any:
+#         return self.function_call(*args, **kwargs)
+    
+#     def merge_with(self, other: 'LocalBlock'):
+#         self.var_map_writes.update(other.var_map_writes)
+#         self.var_map_reads.update(other.var_map_reads)
+
+#         local_scope = {}
+#         raw_str = self.to_string()
+#         exec(self.to_string(), {}, local_scope)
+#         method_name = self.get_method_name()
+#         fn = local_scope[method_name]
 
 
 class StatelessMethodCall(Protocol):
@@ -55,7 +79,7 @@ class StatefulOperator(Generic[T], Operator):
     methods, instead reading and modifying the underlying class `T` through a 
     state variable, see `handle_invoke_method`.
     """
-    def __init__(self, entity: Type[T], methods: dict[str, Block], dataflows: dict[str, DataFlow]):
+    def __init__(self, entity: Type[T], methods: dict[str, 'LocalBlock'], dataflows: dict[str, 'DataFlow']):
         """Create the StatefulOperator from a class and its compiled methods.
         
         Typically, a class could be comprised of split and non-split methods. Take the following example:
@@ -114,7 +138,7 @@ class StatefulOperator(Generic[T], Operator):
         """Create an instance of the underlying class. Equivalent to `T.__init__(*args, **kwargs)`."""
         return self.entity(*args, **kwargs)
 
-    def handle_invoke_method(self, method: InvokeMethod, variable_map: dict[str, Any], state: T):
+    def handle_invoke_method(self, method: 'InvokeMethod', variable_map: dict[str, Any], state: T):
         """Invoke the method of the underlying class.
         
         The `cascade.dataflow.dataflow.InvokeMethod` object must contain a method identifier 
@@ -122,7 +146,7 @@ class StatefulOperator(Generic[T], Operator):
 
         The state `T` is passed along to the function, and may be modified. 
         """
-        return self.methods[method.method_name].call(variable_map=variable_map, state=state)
+        return self.methods[method.method_name].call_block(variable_map=variable_map, state=state)
             
     def get_method_rw_set(self, method_name: str):
         return super().get_method_rw_set(method_name)
@@ -135,12 +159,13 @@ class StatefulOperator(Generic[T], Operator):
 class StatelessOperator(Operator):
     """A StatelessOperator refers to a stateless function and therefore only has
     one dataflow."""
-    def __init__(self, entity: Type, methods: dict[str,  Block], dataflows: dict[str, DataFlow]):
+    def __init__(self, entity: Type, methods: dict[str,  'LocalBlock'], dataflows: dict[str, 'DataFlow']):
         self.entity = entity
+        # TODO: extract this from dataflows.blocks
         self.methods = methods
         self.dataflows = dataflows
        
-    def handle_invoke_method(self, method: InvokeMethod, variable_map: dict[str, Any]):
+    def handle_invoke_method(self, method: 'InvokeMethod', variable_map: dict[str, Any]):
         """Invoke the method of the underlying class.
         
         The `cascade.dataflow.dataflow.InvokeMethod` object must contain a method identifier 
@@ -148,7 +173,7 @@ class StatelessOperator(Operator):
 
         The state `T` is passed along to the function, and may be modified. 
         """
-        return self.methods[method.method_name].call(variable_map=variable_map, state=None)
+        return self.methods[method.method_name].call_block(variable_map=variable_map, state=None)
     
     def get_method_rw_set(self, method_name: str):
         return super().get_method_rw_set(method_name)

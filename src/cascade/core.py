@@ -4,17 +4,13 @@ from typing import Dict
 from klara.core import nodes
 from klara.core.tree_rewriter import AstBuilder
 from klara.core.cfg import Cfg
-from klara.core.node_classes import Arguments
 
-from cascade.dataflow.operator import Block, StatefulOperator, StatelessOperator
+from cascade.dataflow.operator import StatefulOperator, StatelessOperator, Operator
 from cascade.wrappers import ClassWrapper
-from cascade.descriptors import ClassDescriptor, MethodDescriptor
-from cascade.frontend.generator.generate_split_functions import GenerateSplitFunctions, GroupStatements
-from cascade.frontend.generator.generate_dataflow import GenerateDataflow
-from cascade.dataflow.dataflow import CallLocal, DataFlow, DataflowRef, InitClass, Operator 
-from cascade.frontend.intermediate_representation import ControlFlowGraph
-from cascade.frontend.generator.build_compiled_method_string import BuildCompiledMethodsString
-from cascade.frontend.ast_visitors import ExtractTypeVisitor
+from cascade.descriptors import ClassDescriptor
+from cascade.frontend.generator.generate_split_functions import  GroupStatements
+from cascade.dataflow.dataflow import CallLocal, DataFlow, DataflowRef, InitClass 
+
 
 def setup_cfg(code: str) -> Cfg:
         as_tree = AstBuilder().string_build(code)
@@ -98,31 +94,6 @@ def init():
             for b in blocks:
                 op.methods[b.name] = b
 
-        
-
-
-def get_entity_names() -> str:
-    """Returns a list with the names of all registered entities"""
-    return [cls.class_desc.class_name for cls in registered_classes]
-
-
-def get_compiled_methods() -> str:
-    """Returns a list with the compiled methods as string"""
-    compiled_methods: list[str] = []
-    entities: list[str] = get_entity_names()
-    for cls in registered_classes:
-        cls_desc: ClassDescriptor = cls.class_desc
-        for method_desc in cls_desc.methods_dec:
-            if method_desc.method_name == '__init__':
-                continue
-            dataflow_graph: ControlFlowGraph = method_desc.dataflow
-            instance_type_map: dict[str, str] = ExtractTypeVisitor.extract(method_desc.method_node)
-            split_functions = GenerateSplitFunctions.generate(dataflow_graph, cls_desc.class_name, entities, instance_type_map)
-            df: DataFlow = GenerateDataflow.generate(split_functions, instance_type_map)
-            class_compiled_methods: str = BuildCompiledMethodsString.build(split_functions)
-            compiled_methods.append(class_compiled_methods)
-
-    return '\n\n'.join(compiled_methods)
 
 
 def clear():

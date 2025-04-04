@@ -31,14 +31,13 @@ class ControlFlowGraphBuilder:
                 # Make subgraph of both branches
                 subgraph_body, i = self.make_cfg(b.body, i)
                 subgraph_orelse, i = self.make_cfg(b.orelse, i)
-                cond = Statement(i, b.test)
-                print(type(b.test))
+                cond = Statement(i, b.test, is_predicate=True)
                 i += 1
 
                 # Add condition & branches to graph
                 graph.append_statement(cond)
-                graph.append_subgraph(cond, subgraph_body, type="True")
-                graph.append_subgraph(cond, subgraph_orelse, type="False")
+                graph.append_subgraph(cond, subgraph_body, type=True)
+                graph.append_subgraph(cond, subgraph_orelse, type=False)
 
                 # The next node should connect to both subgraph
                 graph._last_node = subgraph_body._last_node + subgraph_orelse._last_node
@@ -61,7 +60,6 @@ class ControlFlowGraphBuilder:
     
     def construct_dataflow_graph(self) -> ControlFlowGraph:
         graph, _ = self.make_cfg(self.block_list)
-        print(graph.to_dot())
         return graph
     
     @classmethod

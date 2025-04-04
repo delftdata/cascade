@@ -10,6 +10,7 @@ class Statement:
     targets: list[str] = field(default_factory=list)
     values: list[str] = field(default_factory=list)
     remote_call: bool = False
+    is_predicate: bool = False
     attribute: Attribute = None
 
     def extend_targets(self, new_targets: list[str]):

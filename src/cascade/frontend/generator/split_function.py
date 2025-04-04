@@ -1,19 +1,20 @@
 from textwrap import indent
 from dataclasses import dataclass, field
-from typing import Union
+from typing import Any, Union, TYPE_CHECKING
 
 
-from cascade.dataflow.dataflow import CallEntity, CallLocal, DataFlow, DataflowRef, InvokeMethod
-from cascade.dataflow.operator import Block
 from cascade.frontend.util import to_camel_case
 from cascade.frontend.intermediate_representation import Statement
 from cascade.frontend.ast_visitors.replace_name import ReplaceSelfWithState
 from cascade.frontend.generator.unparser import unparse
 from cascade.frontend.generator.remote_call import RemoteCall
+from cascade.dataflow.dataflow import CallEntity, CallLocal, DataFlow, DataflowRef, InvokeMethod
 
 from klara.core.cfg import RawBasicBlock
 from klara.core import nodes
-from klara.core.node_classes import Name
+
+if TYPE_CHECKING:
+    from cascade.dataflow.operator import MethodCall, StatelessMethodCall
 
 @dataclass
 class SplitFunction:
@@ -111,16 +112,16 @@ def to_entity_call(statement: Statement, type_map: dict[str, str], dataflows: di
     return CallEntity(dataflow, {a: b for a, b in zip(df_args, args, strict=True)}, assign_result_to=assign,keyby=key)
 
 
-class SplitFunction2:
+class LocalBlock:
     def __init__(self, statements: list[Statement], method_base_name: str, block_num: int, class_name: str):
         assert len(statements) > 0
         # A block of statements should have no remote calls 
         assert all([not s.is_remote() for s in statements])
 
-        self.statements = statements
-        self.method_base_name = method_base_name
-        self.class_name = class_name
-        self.block_num = block_num
+        self.statements: list[Statement] = statements
+        self.method_base_name: str = method_base_name
+        self.block_num: int = block_num
+        self.class_name: str = class_name
 
         writes, reads = set(), set()
         for s in statements:
@@ -142,17 +143,28 @@ class SplitFunction2:
 
         # writes.update
 
-        self.reads = reads
-        self.writes = writes
+        self.reads: set[str] = reads
+        self.writes: set[str] = writes
+        self.function: Union['MethodCall', 'StatelessMethodCall'] = None
+        self.compile_function()
 
-
-    def to_block(self) -> tuple[CallLocal, Block]:
+    def call_block(self, *args, **kwargs) -> Any:
+        assert self.function is not None
+        return self.function(*args, **kwargs)
+    
+    def compile_function(self):
         local_scope = {}
-        raw_str = self.to_string()
         exec(self.to_string(), {}, local_scope)
         method_name = self.get_method_name()
-        fn = local_scope[method_name]
-        return CallLocal(InvokeMethod(method_name)), Block(list(self.writes), list(self.reads), method_name, fn, raw_str)
+        self.function = local_scope[method_name]
+
+    def merge_with(self, other: 'LocalBlock'):
+        self.reads.update(other.reads)
+        self.writes.update(other.writes)
+        self.compile_function()
+
+    def to_node(self) -> CallLocal:
+        return CallLocal(InvokeMethod(self.get_method_name()))
 
     def get_method_name(self):
         return f"{self.method_base_name}_{self.block_num}"
@@ -180,6 +192,8 @@ class SplitFunction2:
             block: RawBasicBlock = statement.block
             if type(block) == nodes.FunctionDef:
                 continue
+
+            # TODO: do this in preprocessing
             ReplaceSelfWithState.replace(block)
             
             body.append(unparse(block))

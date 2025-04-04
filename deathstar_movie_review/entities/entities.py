@@ -61,6 +61,10 @@ class Frontend():
         title.upload_movie(review, rating)
         # text = text[:CHAR_LIMIT] # an operation like this could be reorderd for better efficiency!
         Text.upload_text_2(review, text)
+
+        # TODO: promise pipelining
+        # uuid = UniqueId.generate()
+        # review.upload_unique_id(uuid)
         
 @cascade
 class UniqueId():
@@ -70,6 +74,10 @@ class UniqueId():
         # review_id = uuid.uuid1().int >> 64
         review_id = 424242
         review.upload_unique_id(review_id)
+
+    @staticmethod
+    def generate() -> int:
+        return 424242
 
 @cascade
 class Text():
