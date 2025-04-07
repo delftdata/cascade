@@ -71,7 +71,7 @@ class PythonCollectOperator():
         else:
             self.state[key].append(event)
 
-        n = len(event.dataflow.get_predecessors(event.target))
+        n = len(event.dataflow.get_dataflow().get_predecessors(event.target))
         print(f"PythonCollectOperator: collected {len(self.state[key])}/{n} for event {event._id}")
 
         if len(self.state[key]) == n:

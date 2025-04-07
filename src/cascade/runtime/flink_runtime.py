@@ -63,10 +63,10 @@ class FanOutOperator(ProcessFunction):
 
         if isinstance(event.target, CallLocal):
             logger.debug(event)
-            if event.dataflow.op_name in self.stateful_ops:
-                tag = self.stateful_ops[event.dataflow.op_name]
+            if event.dataflow.operator_name in self.stateful_ops:
+                tag = self.stateful_ops[event.dataflow.operator_name]
             else:
-                tag = self.stateless_ops[event.dataflow.op_name]
+                tag = self.stateless_ops[event.dataflow.operator_name]
 
         else:
             logger.error(f"FanOut: Wrong target: {event}")
@@ -95,7 +95,7 @@ class FlinkOperator(KeyedProcessFunction):
         assert(isinstance(event.target, CallLocal)) 
         logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Processing: {event.target.method}")
         
-        assert(event.dataflow.op_name == self.operator.name()) 
+        assert(event.dataflow.operator_name == self.operator.name()) 
         key = ctx.get_current_key()
         assert(key is not None)
 
@@ -236,7 +236,7 @@ class FlinkCollectOperator(KeyedProcessFunction):
         var_map_num_items = self.var_map.value()
         logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Processing: {event}")
         
-        total_events = len(event.dataflow.get_predecessors(event.target))
+        total_events = len(event.dataflow.get_dataflow().get_predecessors(event.target))
 
         # Add to the map
         if var_map_num_items == None:

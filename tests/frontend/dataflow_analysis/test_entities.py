@@ -68,7 +68,7 @@ def test_simple_block():
     df = sf.build(dataflows, "Test")
 
     assert len(df.blocks) == 1
-    assert list(df.blocks.values())[0].call_block({"x_0": 3, "y_0":5 }, None) == 8
+    assert list(df.blocks.values())[0].compile().call_block({"x_0": 3, "y_0":5 }, None) == 8
 
 
 def test_state():
@@ -97,7 +97,7 @@ class User:
     blocks = list(df.blocks.values())
 
     assert len(blocks) == 1
-    func = blocks[0].call_block
+    func = blocks[0].compile().call_block
     print(blocks[0].to_string())
     
     @dataclass
@@ -143,7 +143,7 @@ class ComposeReview:
         req_id: str
         review_data: dict
 
-    func = blocks[0].call_block
+    func = blocks[0].compile().call_block
 
     print(blocks[0].to_string())
 

@@ -1,5 +1,5 @@
 from textwrap import indent
-from typing import Any, Union, TYPE_CHECKING
+from typing import Any, Callable, Union, TYPE_CHECKING
 
 
 from cascade.frontend.cfg import Statement
@@ -77,23 +77,15 @@ class LocalBlock:
 
         self.reads: set[str] = reads
         self.writes: set[str] = writes
-        self.function: Union['MethodCall', 'StatelessMethodCall'] = None
-        self.compile_function()
 
-    def call_block(self, *args, **kwargs) -> Any:
-        assert self.function is not None
-        return self.function(*args, **kwargs)
+    def compile(self) -> 'CompiledLocalBlock':
+        return CompiledLocalBlock(self)
     
-    def compile_function(self):
+    def compile_function(self) -> Callable:
         local_scope = {}
         exec(self.to_string(), {}, local_scope)
         method_name = self.get_method_name()
-        self.function = local_scope[method_name]
-
-    def merge_with(self, other: 'LocalBlock'):
-        self.reads.update(other.reads)
-        self.writes.update(other.writes)
-        self.compile_function()
+        return local_scope[method_name]
 
     def to_node(self) -> CallLocal:
         return CallLocal(InvokeMethod(self.get_method_name()))
@@ -137,3 +129,28 @@ class LocalBlock:
                     body.append(f'variable_map[\'{v}\'] = {v}')
             body.append('return None')
         return "\n".join(body)
+    
+
+class CompiledLocalBlock:
+    def __init__(self, block: LocalBlock):
+        self.method_base_name: str = block.method_base_name
+        self.block_num: int = block.block_num
+        self.class_name: str = block.class_name
+
+        self.reads = block.reads
+        self.writes = block.writes
+        self.function_string = block.to_string()
+        self.function: Union['MethodCall', 'StatelessMethodCall'] = block.compile_function()
+
+    def call_block(self, *args, **kwargs) -> Any:
+        return self.function(*args, **kwargs)
+    
+
+    # def to_node(self) -> CallLocal:
+    #     return CallLocal(InvokeMethod(self.get_method_name()))
+
+    # def get_method_name(self):
+    #     return f"{self.method_base_name}_{self.block_num}"
+
+    # def get_method_signature(self) -> str:
+    #     return f'variable_map, state'  

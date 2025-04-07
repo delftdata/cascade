@@ -192,13 +192,14 @@ class DataFlow:
         self.nodes: dict[int, Node] = {}
         self.entry: List[Node] = []
         self.op_name = op_name
-        self.ref = DataflowRef(op_name, name)
         if args:
             self.args: list[str] = args
         else:
             self.args = []
         self.blocks: dict[str, 'LocalBlock'] = {}
 
+    def ref(self) -> DataflowRef:
+        return DataflowRef(self.op_name, self.name)
     # def get_operator(self) -> Operator:
     #     return cascade.core.operators[self.op_name]
 
@@ -304,9 +305,9 @@ class DataFlow:
     def generate_event(self, variable_map: dict[str, Any], key: Optional[str] = None) -> list['Event']:
             assert len(self.entry) != 0
             # give all the events the same id
-            first_event = Event(self.entry[0], variable_map, self.ref, key=key)
+            first_event = Event(self.entry[0], variable_map, self.ref(), key=key)
             id = first_event._id
-            events = [first_event] + [Event(entry, variable_map, self.ref, _id=id, key=key) for entry in self.entry[1:]] 
+            events = [first_event] + [Event(entry, variable_map, self.ref(), _id=id, key=key) for entry in self.entry[1:]] 
             
             # TODO: propogate at "compile time" instead of doing this every time
             local_events = []

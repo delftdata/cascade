@@ -1,6 +1,7 @@
 """A test script for dataflows with merge operators"""
 
 from pyflink.datastream.data_stream import CloseableIterator
+from cascade.dataflow.dataflow import DataflowRef
 from cascade.dataflow.optimization.parallelization import parallelize
 
 import tests.integration.flink.utils as utils
@@ -31,39 +32,47 @@ def test_collect_operator():
 def _test_collect_operator(client, collector):
     user_op = cascade.core.operators["User"]
     item_op = cascade.core.operators["Item"]
-    df = parallelize(user_op.dataflows["buy_2_items"])
-    df.name = "buy_2_parallel"
-    user_op.dataflows["buy_2_parallel"] = df
-    print(user_op.dataflows["buy_2_parallel"].to_dot())
-    print(user_op.dataflows)
-    assert len(user_op.dataflows["buy_2_parallel"].entry) == 2
+
+    user_buy_2 = cascade.core.dataflows[DataflowRef("User", "buy_2_items")]
+    item_init = cascade.core.dataflows[DataflowRef("Item", "__init__")]
+    user_init = cascade.core.dataflows[DataflowRef("User", "__init__")]
+    user_get_balance = cascade.core.dataflows[DataflowRef("User", "get_balance")]
+
+    df_parallel = parallelize(user_buy_2)
+    df_parallel.name = "buy_2_parallel"
+    cascade.core.dataflows[DataflowRef("User", "buy_2_parallel")] = df_parallel
+    print(df_parallel.to_dot())
+    assert len(df_parallel.entry) == 2
 
 
-    event = user_op.dataflows["__init__"].generate_event({"key": "foo", "balance": 100}, key="foo")
+    event = user_init.generate_event({"key": "foo", "balance": 100}, key="foo")
     client.send(event)
 
     result = wait_for_event_id(event[0]._id, collector)
-    print(result.result.__dict__)
 
-    event = item_op.dataflows["__init__"].generate_event({"key": "fork", "price": 5}, key="fork")
+    event = item_init.generate_event({"key": "fork", "price": 5}, key="fork")
     client.send(event)
 
-    event = item_op.dataflows["__init__"].generate_event({"key": "spoon", "price": 3}, key="spoon")
+    event = item_init.generate_event({"key": "spoon", "price": 3}, key="spoon")
     client.send(event)
 
     result = wait_for_event_id(event[0]._id, collector)
-    print(result.result.__dict__)
 
       
     # Buy a fork and spoon
-    event = user_op.dataflows["buy_2_parallel"].generate_event({"item1_0": "fork", "item2_0": "spoon"}, key="foo")
+    print("sending buy 2")
+    print(df_parallel.to_dot())
+    event = df_parallel.generate_event({"item1_0": "fork", "item2_0": "spoon"}, key="foo")
+    print(event)
     client.send(event)
     result = wait_for_event_id(event[0]._id, collector)
     assert result.result == True
    
 
     # Check the balance
-    event = user_op.dataflows["get_balance"].generate_event({}, key="foo")
+    event = user_get_balance.generate_event({}, key="foo")
     client.send(event)
     result = wait_for_event_id(event[0]._id, collector)
     assert result.result == (100 - 5 - 3)
+
+

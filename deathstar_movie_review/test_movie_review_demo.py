@@ -5,6 +5,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
+from cascade.dataflow.dataflow import DataflowRef
 from cascade.dataflow.optimization.parallelization import parallelize
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from cascade.runtime.python_runtime import PythonClientSync, PythonRuntime
@@ -55,13 +56,9 @@ def deathstar_movie_demo(client):
     compose_op = cascade.core.operators["ComposeReview"]
     movie_op = cascade.core.operators["MovieId"]
     frontend_op = cascade.core.operators["Frontend"]
-    df = parallelize(frontend_op.dataflows["compose"])
-    df.name = "compose_parallel"
-    frontend_op.dataflows["compose_parallel"] = df
-    print(frontend_op.dataflows["compose_parallel"].to_dot())
-    print(frontend_op.dataflows)
-    assert len(frontend_op.dataflows["compose_parallel"].entry) == 4
 
+    compose_df = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
+    
     for df in cascade.core.dataflows.values():
         print(df.to_dot())
 
@@ -77,7 +74,7 @@ def deathstar_movie_demo(client):
     
     print("testing user create")
 
-    event = user_op.dataflows["__init__"].generate_event({"username": username, "user_data": user_data}, username)
+    event = cascade.core.dataflows[DataflowRef("User", "__init__")].generate_event({"username": username, "user_data": user_data}, username)
     result = client.send(event, block=True)
     print(result)
     assert result.username == username
@@ -88,13 +85,12 @@ def deathstar_movie_demo(client):
     movie_id = 1
 
     # make the review
-    event = compose_op.dataflows["__init__"].generate_event({"req_id": req_id}, req_id)
+    event = cascade.core.dataflows[DataflowRef("ComposeReview", "__init__")].generate_event({"req_id": req_id}, req_id)
     result = client.send(event, block=True)
     print("review made")
 
     # # make the movie
-    # init_movie = OpNode(MovieId, InitClass(), read_key_from="title")
-    event = movie_op.dataflows["__init__"].generate_event({"title": movie_title, "movie_id": movie_id}, movie_title)
+    event = cascade.core.dataflows[DataflowRef("MovieId", "__init__")].generate_event({"title": movie_title, "movie_id": movie_id}, movie_title)
     result = client.send(event, block=True)
     print("movie made")
 
@@ -109,13 +105,13 @@ def deathstar_movie_demo(client):
 
     r_data = {r+"_0": v for r, v in review_data.items()}
 
-    event = frontend_op.dataflows["compose"].generate_event(r_data)
+    event = compose_df.generate_event(r_data)
     result = client.send(event, block=True)
     print(result)
     print("review composed")
 
 
-    event = compose_op.dataflows["get_data"].generate_event({"req_id": req_id}, req_id)
+    event = cascade.core.dataflows[DataflowRef("ComposeReview", "get_data")].generate_event({"req_id": req_id}, req_id)
     result = client.send(event, block=True)
     print(result)
 
@@ -132,11 +128,18 @@ def deathstar_movie_demo(client):
 
 
     ## NOW DO IT PARALLEL!
+    df_parallel = parallelize(compose_df)
+    df_parallel.name = "compose_parallel"
+    cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
+    print(df_parallel.to_dot())
+    assert len(df_parallel.entry) == 4
+
+
     # make the review
     new_req_id = "43"
-    event = compose_op.dataflows["__init__"].generate_event({"req_id": new_req_id}, new_req_id)
+    event = cascade.core.dataflows[DataflowRef("ComposeReview", "__init__")].generate_event({"req_id": new_req_id}, new_req_id)
     result = client.send(event, block=True)
-    print("review made")
+    print("review made (parallel)")
 
     # compose the review
     review_data = {
@@ -149,12 +152,12 @@ def deathstar_movie_demo(client):
 
     r_data = {r+"_0": v for r, v in review_data.items()}
 
-    event = frontend_op.dataflows["compose_parallel"].generate_event(r_data)
+    event = df_parallel.generate_event(r_data)
     result = client.send(event, block=True)
     print(result)
     print("review composed (parallel)")
 
-    event = compose_op.dataflows["get_data"].generate_event({"req_id": req_id}, req_id)
+    event = cascade.core.dataflows[DataflowRef("ComposeReview", "get_data")].generate_event({"req_id": req_id}, req_id)
     result = client.send(event, block=True)
     print(result)
 

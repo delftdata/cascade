@@ -37,7 +37,7 @@ def unparse(block: RawBasicBlock):
             return repr(block)
         case nodes.If:
             print(block.test, block.body, block.orelse)
-            raise NotImplementedError(type(block))
+            raise NotImplementedError(type(block), "Should have been removed in previous CFG pass")
         case nodes.FunctionDef:
             return str(block).replace('"', "'")
         case _:

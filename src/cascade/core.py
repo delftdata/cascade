@@ -67,9 +67,7 @@ def init():
         for method in cls.class_desc.methods_dec:
             df_ref = DataflowRef(op_name, method.method_name)
             # Add version number manually
-            print(df_ref)
             args = [f"{str(arg)}_0" for arg in method.method_node.args.args]
-            print(args)
             # TODO: cleaner solution that checks if the function is stateful or not
             if len(args) > 0 and args[0] == "self_0":
                 args = args[1:]
@@ -92,9 +90,10 @@ def init():
             else:
                 df = DataflowBuilder(method.method_node).build(dataflows, op_name)
             
-            op.dataflows[df.name] = df
+            dataflows[df.ref()] = df
+            # op.dataflows[df.name] = df
             for name, b in df.blocks.items():
-                op.methods[name] = b
+                op.methods[name] = b.compile()
 
 
 def get_operator(op_name: str):
