@@ -20,7 +20,7 @@ def test_call_entity():
             return a+b""")
     cfg: Cfg = setup_cfg(program)
     blocks = cfg.block_list
-    test_class: nodes.Block = blocks[2] 
+    test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
     sf = DataflowBuilder(get_total)
@@ -56,7 +56,7 @@ def test_simple_block():
             return x+y""")
     cfg: Cfg = setup_cfg(program)
     blocks = cfg.block_list
-    test_class: nodes.Block = blocks[2] 
+    test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
     sf = DataflowBuilder(get_total)
@@ -82,7 +82,7 @@ class User:
 
     cfg: Cfg = setup_cfg(program)
     blocks = cfg.block_list
-    user_class: nodes.Block = blocks[2] 
+    user_class = blocks[2] 
     buy_item: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
 
     sf = DataflowBuilder(buy_item)
@@ -121,7 +121,7 @@ class ComposeReview:
 
     cfg: Cfg = setup_cfg(program)
     blocks = cfg.block_list
-    user_class: nodes.Block = blocks[2] 
+    user_class = blocks[2] 
     upload_unique: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
     
     sf = DataflowBuilder(upload_unique)

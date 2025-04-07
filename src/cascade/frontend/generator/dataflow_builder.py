@@ -143,26 +143,38 @@ def blocked_cfg(statement_graph: nx.DiGraph, entry: Statement) -> nx.DiGraph:
         # check the first node after completed
         succ_then = list(statement_graph.successors(last_then[-1]))
         succ_orelse = list(statement_graph.successors(last_orelse[-1]))
-        assert len(succ_then) == 1
-        assert len(succ_orelse) == 1
-        assert succ_orelse[0] == succ_then[0]
-
-        first_finally = succ_orelse[0]
-        finally_graph = blocked_cfg(statement_graph, first_finally)
         
+        if len(succ_then) == 1 and len(succ_orelse) == 1:
+            assert succ_orelse[0] == succ_then[0]
+
+        assert len(succ_then) <= 1
+        assert len(succ_orelse) <= 1
+
+        
+
+        # add then and orelse blocks
         graph.add_edges_from(then_blocked_graph.edges())
         graph.add_edges_from(orelse_blocked_graph.edges())
-        graph.add_edges_from(finally_graph.edges())
-
         
+        # connect them to this node
         first_then = list(then_blocked_graph.nodes)[0]
         first_orelse = list(orelse_blocked_graph.nodes)[0]
-        first_finally = list(finally_graph.nodes)[0]
-
         graph.add_edge(last_node, first_then)
         graph.add_edge(last_node, first_orelse)
-        graph.add_edge(last_then, first_finally)
-        graph.add_edge(last_orelse, first_finally)
+
+        # connect the rest of the graph at the end (recursively)
+        if len(succ_then) == 1 or len(succ_orelse) == 1:
+            try:
+                first_finally = succ_orelse[0]
+            except IndexError:
+                first_finally = succ_then[0]
+            finally_graph = blocked_cfg(statement_graph, first_finally)
+            graph.add_edges_from(finally_graph.edges())
+            first_finally = list(finally_graph.nodes)[0]
+        
+            graph.add_edge(last_then, first_finally)
+            graph.add_edge(last_orelse, first_finally)
+        
         return graph
     else:
         raise ValueError(f"We expect a CFG node to have max 2 successors, got {succ}")

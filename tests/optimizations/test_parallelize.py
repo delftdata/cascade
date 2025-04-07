@@ -16,7 +16,7 @@ def test_parallelize():
     assert not cascade.core.registered_classes, "Registered classes should be empty before importing a Cascade \
                                                     Module"
     # import the module
-    import_module_name: str = 'test_ops'
+    import_module_name: str = 'entities'
     exec(f'import tests.optimizations.{import_module_name}')
     
     cascade.core.init()

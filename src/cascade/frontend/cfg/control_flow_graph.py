@@ -38,7 +38,7 @@ class ControlFlowGraph:
 
 
     def append_subgraph(self, to_node: Statement, subgraph: 'ControlFlowGraph', **edge_attr):
-        if subgraph.graph.number_of_nodes == 0:
+        if subgraph.graph.number_of_nodes() == 0:
             return
         for node in subgraph.get_nodes():
             self.graph.add_node(node)

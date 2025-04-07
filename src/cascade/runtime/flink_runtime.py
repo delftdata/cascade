@@ -165,7 +165,7 @@ class FlinkStatelessOperator(ProcessFunction):
         if isinstance(event.target.method, InvokeMethod):
             result = self.operator.handle_invoke_method(event.target.method, variable_map=event.variable_map)  
         else:
-            raise Exception(f"A StatelessOperator cannot compute event type: {event.target.method_type}")
+            raise Exception(f"A StatelessOperator cannot compute event type: {event.target.method}")
         
 
         new_events = list(event.propogate(result))

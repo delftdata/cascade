@@ -36,6 +36,9 @@ class ControlFlowGraphBuilder:
                 graph.append_subgraph(cond, subgraph_body, type=True)
                 graph.append_subgraph(cond, subgraph_orelse, type=False)
 
+                if subgraph_orelse.graph.number_of_nodes() == 0:
+                    raise NotImplementedError("dataflow structure for if without else is not correct yet")
+
                 # The next node should connect to both subgraph
                 graph._last_node = subgraph_body._last_node + subgraph_orelse._last_node
             else:
