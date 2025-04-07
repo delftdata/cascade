@@ -31,7 +31,7 @@ def test_call_entity():
         DataflowRef("Stock", "get_quantity"): DataFlow("get_quantity", "Stock", [])
     }
 
-    df, blocks = sf.build(dataflows, "Test")
+    df = sf.build(dataflows, "Test")
 
     ## TODO: check blocks/df
     assert len(df.nodes) == 3
@@ -65,10 +65,10 @@ def test_simple_block():
         DataflowRef("Test", "add"): DataFlow("get_total", "Test", ["x", "y"]),
     }
 
-    df, blocks = sf.build(dataflows, "Test")
+    df = sf.build(dataflows, "Test")
 
-    assert len(blocks) == 1
-    assert blocks[0].call({"x_0": 3, "y_0":5 }, None) == 8
+    assert len(df.blocks) == 1
+    assert list(df.blocks.values())[0].call_block({"x_0": 3, "y_0":5 }, None) == 8
 
 
 def test_state():
@@ -92,18 +92,18 @@ class User:
         DataflowRef("Item", "get_price"): DataFlow("get_price", "Item", []),
     }
 
-    df, blocks = sf.build(dataflows, "User")
+    df = sf.build(dataflows, "User")
+
+    blocks = list(df.blocks.values())
 
     assert len(blocks) == 1
-    func = blocks[0].call
-    print(blocks[0].raw_method_string)
+    func = blocks[0].call_block
+    print(blocks[0].to_string())
     
     @dataclass
     class User:
         username: str
         balance: int
-
-    func = blocks[0].call
 
     user = User("a", 20)
     func({"item_price_0": 10}, user.__dict__)
@@ -131,8 +131,10 @@ class ComposeReview:
         DataflowRef("ComposeReview", "__init__"): DataFlow("__init__", "ComposeReview", ["req_id"]),
     }
 
-    df, blocks = sf.build(dataflows, "ComposeReview")
+    df = sf.build(dataflows, "ComposeReview")
 
+
+    blocks = list(df.blocks.values())
     assert len(blocks) == 1
         
     
@@ -141,9 +143,9 @@ class ComposeReview:
         req_id: str
         review_data: dict
 
-    func = blocks[0].call
+    func = blocks[0].call_block
 
-    print(blocks[0].raw_method_string)
+    print(blocks[0].to_string())
 
     compose_review = ComposeReview("req", {})
     func({"review_id_0": 123}, compose_review.__dict__)

@@ -1,6 +1,3 @@
-import networkx as nx
-
-
 from klara.core.cfg import  ModuleLabel, TempAssignBlock
 from klara.core import nodes
 

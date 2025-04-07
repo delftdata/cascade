@@ -4,6 +4,8 @@ from typing import Any, Iterable, List, Mapping, Optional, Union
 from typing import TYPE_CHECKING
 import uuid
 
+import cascade
+
 if TYPE_CHECKING:
     from cascade.frontend.generator.split_function import LocalBlock
     from cascade.dataflow.operator import Operator
@@ -83,7 +85,7 @@ class CallEntity(Node):
             new_key = event.variable_map[self.keyby]
         else:
             new_key = None
-        df = self.dataflow.get_dataflow()
+        df = cascade.core.get_dataflow(self.dataflow)
         new_targets = df.entry
         if not isinstance(new_targets, list):
             new_targets = [new_targets]

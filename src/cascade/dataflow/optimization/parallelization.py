@@ -183,13 +183,13 @@ other ideas:
 from dataclasses import dataclass
 from typing import Any
 from cascade.dataflow.dataflow import CallEntity, CallLocal, CollectNode, DataFlow, Edge, Node
-
+import cascade
 
 @dataclass
 class AnnotatedNode:
     node: Node
-    reads: list[str]
-    writes: list[str]
+    reads: set[str]
+    writes: set[str]
     
 
 import networkx as nx
@@ -201,12 +201,13 @@ def parallelize(df: DataFlow):
     graph = nx.DiGraph()
     for node in df.nodes.values():
         if isinstance(node, CallEntity):
-            reads = list(node.variable_rename.values())
-            writes = [result] if (result := node.assign_result_to) else []
+            reads = set(node.variable_rename.values())
+            writes = {result} if (result := node.assign_result_to) else set()
         elif isinstance(node, CallLocal):
-            method = df.get_operator().methods[node.method.method_name]
-            reads = method.var_map_reads
-            writes = method.var_map_writes
+            operator = cascade.core.operators[df.op_name]
+            method = df.blocks[node.method.method_name]
+            reads = method.reads
+            writes = method.writes
         else:
             raise ValueError(f"unsupported node type: {type(node)}")
         

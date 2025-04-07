@@ -6,7 +6,7 @@ from klara.core.cfg import Cfg
 from klara.core import nodes
 
 from cascade.dataflow.dataflow import DataFlow, DataflowRef
-from cascade.frontend.generator.generate_split_functions import GroupStatements, blocked_cfg
+from cascade.frontend.generator.generate_split_functions import GroupStatements, blocked_cfg, split_cfg
 from cascade.frontend.intermediate_representation.control_flow_graph import ControlFlowGraph
 from cascade.frontend.util import setup_cfg
 
@@ -39,12 +39,15 @@ def test_entity_calls():
     }
 
 
-    # TODO: Check # entity calls, # of blocks, # of local calls
 
     df = sf.build_df(dataflows, "Test")
     print(df.to_dot())
     for block in df.blocks.values():
         print(block.to_string())
+
+    # TODO: Check # entity calls, # of local calls
+    assert len(df.nodes) == 5
+    assert len(df.blocks) == 2
 
 def test_branching():
     program: str = dedent("""
@@ -68,17 +71,8 @@ def test_branching():
     sf.build_cfg()
     print(sf.cfg.to_dot())
     new = blocked_cfg(sf.cfg.graph, sf.cfg.get_single_source())
-    for node in new.nodes:
-        for s in node:
-            print(s.block_num, end=" ")
-        print()
-    for edge in new.edges:
-        for s in edge[0]:
-            print(s.block_num, end=" ")
-        print("->", end= " ")
-        for s in edge[1]:
-            print(s.block_num, end=" ")
-        print()
+
+    assert len(new.nodes) == 5
     
     dataflows = {
         DataflowRef("Test", "test_branching"): DataFlow("test_branching", "Test", [])
@@ -89,8 +83,21 @@ def test_branching():
     print(df.to_dot())
     for block in df.blocks.values():
         print(block.to_string())
-    assert len(df.blocks) == 4
     assert len(df.nodes) == 5
+    assert len(df.blocks) == 4
+
+def print_digraph(graph):
+    for node in graph.nodes:
+        for s in node:
+            print(s.block_num, end=" ")
+        print()
+    for edge in graph.edges:
+        for s in edge[0]:
+            print(s.block_num, end=" ")
+        print("->", end= " ")
+        for s in edge[1]:
+            print(s.block_num, end=" ")
+        print()
 
 def test_branching_with_entity_calls():
     program: str = dedent("""
@@ -117,17 +124,10 @@ def test_branching_with_entity_calls():
     sf.build_cfg()
     print(sf.cfg.to_dot())
     new = blocked_cfg(sf.cfg.graph, sf.cfg.get_single_source())
-    for node in new.nodes:
-        for s in node:
-            print(s.block_num, end=" ")
-        print()
-    for edge in new.edges:
-        for s in edge[0]:
-            print(s.block_num, end=" ")
-        print("->", end= " ")
-        for s in edge[1]:
-            print(s.block_num, end=" ")
-        print()
+
+    assert len(list(new.nodes)) == 5
+    new_split = split_cfg(new)
+    assert len(list(new_split.nodes)) == 7
     
     dataflows = {
         DataflowRef("Test", "test_branching"): DataFlow("test_branching", "Test", []),
@@ -141,6 +141,9 @@ def test_branching_with_entity_calls():
     print(df.to_dot())
     for block in df.blocks.values():
         print(block.to_string())
+
+    assert len(df.nodes) == 7
+    assert len(df.blocks) == 5
 
 def test_block_merging():
     raise NotImplementedError()
