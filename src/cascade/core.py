@@ -8,7 +8,7 @@ from klara.core.cfg import Cfg
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator, Operator
 from cascade.wrappers import ClassWrapper
 from cascade.descriptors import ClassDescriptor
-from cascade.frontend.generator.generate_split_functions import  GroupStatements
+from cascade.frontend.generator.dataflow_builder import  DataflowBuilder
 from cascade.dataflow.dataflow import CallLocal, DataFlow, DataflowRef, InitClass 
 
 
@@ -90,7 +90,7 @@ def init():
                 df.entry = [n0]
                 blocks = []
             else:
-                df = GroupStatements(method.method_node).build(dataflows, op_name)
+                df = DataflowBuilder(method.method_node).build(dataflows, op_name)
             
             op.dataflows[df.name] = df
             for name, b in df.blocks.items():

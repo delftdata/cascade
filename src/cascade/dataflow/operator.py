@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Generic, Mapping, Protocol, Type, TypeVar, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from cascade.frontend.generator.split_function import LocalBlock
+    from cascade.frontend.generator.local_block import LocalBlock
     from cascade.dataflow.dataflow import DataFlow, InvokeMethod
 
 T = TypeVar('T')
@@ -38,28 +38,6 @@ class MethodCall(Generic[T], Protocol):
 
     def __call__(self, variable_map: dict[str, Any], state: T) -> Any: ...
     """@private"""
-
-# @dataclass
-# class LocalBlock:
-#     var_map_writes: set[str]
-#     var_map_reads: set[str]
-#     name: str
-#     statements: 
-#     function_call: Union[MethodCall, 'StatelessMethodCall']
-#     raw_method_string: str
-
-#     def call(self, *args, **kwargs) -> Any:
-#         return self.function_call(*args, **kwargs)
-    
-#     def merge_with(self, other: 'LocalBlock'):
-#         self.var_map_writes.update(other.var_map_writes)
-#         self.var_map_reads.update(other.var_map_reads)
-
-#         local_scope = {}
-#         raw_str = self.to_string()
-#         exec(self.to_string(), {}, local_scope)
-#         method_name = self.get_method_name()
-#         fn = local_scope[method_name]
 
 
 class StatelessMethodCall(Protocol):

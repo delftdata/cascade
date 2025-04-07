@@ -7,7 +7,7 @@ import uuid
 import cascade
 
 if TYPE_CHECKING:
-    from cascade.frontend.generator.split_function import LocalBlock
+    from cascade.frontend.generator.local_block import LocalBlock
     from cascade.dataflow.operator import Operator
 
 
@@ -320,15 +320,6 @@ class DataFlow:
        
     def __str__(self) -> str:
         return f"{self.op_name}.{self.name}" 
-    
-@dataclass
-class CollectTarget:
-    target_node: CollectNode
-    """Target node"""
-    total_items: int
-    """How many items the merge node needs to wait on (including this one)."""
-    result_idx: int
-    """The index this result should be in the collected array."""
 
 def metadata_dict() -> dict:
     return {

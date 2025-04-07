@@ -2,9 +2,9 @@ import networkx as nx
 
 from cascade.dataflow.dataflow import DataFlow, DataflowRef, IfNode
 from cascade.frontend.ast_visitors.extract_type_visitor import ExtractTypeVisitor
-from cascade.frontend.dataflow_analysis.dataflow_graph_builder import ControlFlowGraphBuilder
-from cascade.frontend.intermediate_representation import Statement, ControlFlowGraph
-from cascade.frontend.generator.split_function import LocalBlock, to_entity_call
+from cascade.frontend.cfg.cfg_builder import ControlFlowGraphBuilder
+from cascade.frontend.cfg import Statement, ControlFlowGraph
+from cascade.frontend.generator.local_block import LocalBlock, to_entity_call
 
 
 from klara.core import nodes
@@ -169,7 +169,7 @@ def blocked_cfg(statement_graph: nx.DiGraph, entry: Statement) -> nx.DiGraph:
 
 
 
-class GroupStatements:
+class DataflowBuilder:
     def __init__(self, function_def: nodes.FunctionDef):
         self.function_def = function_def
         self.name = self.function_def.name

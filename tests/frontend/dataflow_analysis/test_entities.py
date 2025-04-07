@@ -7,7 +7,7 @@ from klara.core import nodes
 
 from cascade.dataflow.dataflow import CallEntity, CallLocal, DataFlow, DataflowRef
 
-from cascade.frontend.generator.generate_split_functions import GroupStatements
+from cascade.frontend.generator.dataflow_builder import DataflowBuilder
 from cascade.frontend.util import setup_cfg
 
 def test_call_entity():
@@ -23,7 +23,7 @@ def test_call_entity():
     test_class: nodes.Block = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = GroupStatements(get_total)
+    sf = DataflowBuilder(get_total)
     sf.build_cfg()
     
     dataflows = {
@@ -59,7 +59,7 @@ def test_simple_block():
     test_class: nodes.Block = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = GroupStatements(get_total)
+    sf = DataflowBuilder(get_total)
     
     dataflows = {
         DataflowRef("Test", "add"): DataFlow("get_total", "Test", ["x", "y"]),
@@ -85,7 +85,7 @@ class User:
     user_class: nodes.Block = blocks[2] 
     buy_item: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
 
-    sf = GroupStatements(buy_item)
+    sf = DataflowBuilder(buy_item)
     
     dataflows = {
         DataflowRef("User", "buy_item"): DataFlow("buy_item", "User", ["item"]),
@@ -124,7 +124,7 @@ class ComposeReview:
     user_class: nodes.Block = blocks[2] 
     upload_unique: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
     
-    sf = GroupStatements(upload_unique)
+    sf = DataflowBuilder(upload_unique)
     
     dataflows = {
         DataflowRef("ComposeReview", "upload_unique_id"): DataFlow("upload_unique_id", "ComposeReview", ["review_id"]),

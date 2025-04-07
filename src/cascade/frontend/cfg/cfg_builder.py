@@ -1,7 +1,7 @@
 from klara.core.cfg import  ModuleLabel, TempAssignBlock
 from klara.core import nodes
 
-from cascade.frontend.intermediate_representation import Statement, ControlFlowGraph
+from cascade.frontend.cfg import Statement, ControlFlowGraph
 from cascade.frontend.ast_visitors import ContainsAttributeVisitor, VariableGetter
 
 

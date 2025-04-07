@@ -6,8 +6,8 @@ from klara.core.cfg import Cfg
 from klara.core import nodes
 
 from cascade.dataflow.dataflow import DataFlow, DataflowRef
-from cascade.frontend.generator.generate_split_functions import GroupStatements, blocked_cfg, split_cfg
-from cascade.frontend.intermediate_representation.control_flow_graph import ControlFlowGraph
+from cascade.frontend.generator.dataflow_builder import DataflowBuilder, blocked_cfg, split_cfg
+from cascade.frontend.cfg.control_flow_graph import ControlFlowGraph
 from cascade.frontend.util import setup_cfg
 
 def test_entity_calls():
@@ -29,7 +29,7 @@ def test_entity_calls():
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
     
-    sf = GroupStatements(get_total)
+    sf = DataflowBuilder(get_total)
     sf.build_cfg()
     
     dataflows = {
@@ -67,7 +67,7 @@ def test_branching():
     test_class: nodes.Block = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = GroupStatements(get_total)
+    sf = DataflowBuilder(get_total)
     sf.build_cfg()
     print(sf.cfg.to_dot())
     new = blocked_cfg(sf.cfg.graph, sf.cfg.get_single_source())
@@ -120,7 +120,7 @@ def test_branching_with_entity_calls():
     test_class: nodes.Block = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = GroupStatements(get_total)
+    sf = DataflowBuilder(get_total)
     sf.build_cfg()
     print(sf.cfg.to_dot())
     new = blocked_cfg(sf.cfg.graph, sf.cfg.get_single_source())

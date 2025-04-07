@@ -3,7 +3,7 @@ from typing import Iterable, Optional
 import networkx as nx
 
 from cascade.frontend.generator.unparser import unparse
-from cascade.frontend.intermediate_representation.statement import Statement
+from cascade.frontend.cfg.statement import Statement
 
 
 @dataclass

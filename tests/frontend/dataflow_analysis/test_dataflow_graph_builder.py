@@ -3,8 +3,8 @@ from textwrap import dedent
 from klara.core.cfg import Cfg
 from klara.core import nodes
 
-from cascade.frontend.dataflow_analysis.dataflow_graph_builder import ControlFlowGraphBuilder
-from cascade.frontend.intermediate_representation import Statement, ControlFlowGraph
+from cascade.frontend.cfg.cfg_builder import ControlFlowGraphBuilder
+from cascade.frontend.cfg import Statement, ControlFlowGraph
 from cascade.frontend.util import setup_cfg
 
 

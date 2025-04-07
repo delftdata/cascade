@@ -1,7 +1,7 @@
 from klara.core import nodes
 
-from cascade.frontend.dataflow_analysis.dataflow_graph_builder import ControlFlowGraphBuilder
-from cascade.frontend.intermediate_representation import ControlFlowGraph
+from cascade.frontend.cfg.cfg_builder import ControlFlowGraphBuilder
+from cascade.frontend.cfg import ControlFlowGraph
 
 
 class MethodDescriptor:
