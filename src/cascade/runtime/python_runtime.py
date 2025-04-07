@@ -112,10 +112,10 @@ class PythonRuntime():
         self.running = True
         def consume_event(event: Event):
             if isinstance(event.target, CallLocal):
-                if event.dataflow.op_name in self.statefuloperators:
-                    yield from self.statefuloperators[event.dataflow.op_name].process(event)
+                if event.dataflow.operator_name in self.statefuloperators:
+                    yield from self.statefuloperators[event.dataflow.operator_name].process(event)
                 else:
-                    yield from self.statelessoperators[event.dataflow.op_name].process(event)
+                    yield from self.statelessoperators[event.dataflow.operator_name].process(event)
             elif isinstance(event.target, CallEntity):
                 new_events = event.propogate(None)
                 if isinstance(new_events, EventResult):

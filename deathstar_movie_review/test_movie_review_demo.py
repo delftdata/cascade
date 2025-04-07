@@ -152,7 +152,7 @@ def deathstar_movie_demo(client):
     event = frontend_op.dataflows["compose_parallel"].generate_event(r_data)
     result = client.send(event, block=True)
     print(result)
-    print("review composed")
+    print("review composed (parallel)")
 
     event = compose_op.dataflows["get_data"].generate_event({"req_id": req_id}, req_id)
     result = client.send(event, block=True)

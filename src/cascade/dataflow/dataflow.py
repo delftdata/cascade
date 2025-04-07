@@ -53,8 +53,8 @@ class DataflowRef:
     operator_name: str
     dataflow_name: str
 
-    # def get_dataflow(self) -> 'DataFlow':
-    #     return cascade_core.dataflows[self]
+    def get_dataflow(self) -> 'DataFlow':
+        return cascade.core.dataflows[self]
     
     def __repr__(self) -> str:
         return f"{self.operator_name}.{self.dataflow_name}"
@@ -104,7 +104,7 @@ class CallEntity(Node):
         return [Event(
                     target,
                     new_var_map, 
-                    df,
+                    self.dataflow,
                     _id=event._id,
                     metadata=event.metadata,
                     call_stack=event.call_stack,
@@ -192,6 +192,7 @@ class DataFlow:
         self.nodes: dict[int, Node] = {}
         self.entry: List[Node] = []
         self.op_name = op_name
+        self.ref = DataflowRef(op_name, name)
         if args:
             self.args: list[str] = args
         else:
@@ -303,9 +304,9 @@ class DataFlow:
     def generate_event(self, variable_map: dict[str, Any], key: Optional[str] = None) -> list['Event']:
             assert len(self.entry) != 0
             # give all the events the same id
-            first_event = Event(self.entry[0], variable_map, self, key=key)
+            first_event = Event(self.entry[0], variable_map, self.ref, key=key)
             id = first_event._id
-            events = [first_event] + [Event(entry, variable_map, self, _id=id, key=key) for entry in self.entry[1:]] 
+            events = [first_event] + [Event(entry, variable_map, self.ref, _id=id, key=key) for entry in self.entry[1:]] 
             
             # TODO: propogate at "compile time" instead of doing this every time
             local_events = []
@@ -330,7 +331,7 @@ def metadata_dict() -> dict:
 
 @dataclass
 class CallStackItem:
-    dataflow: DataFlow
+    dataflow: DataflowRef
     assign_result_to: Optional[str]
     var_map: dict[str, str]
     """Variables are saved in the call stack"""
@@ -373,7 +374,7 @@ class Event():
 
     def propogate(self, result: Any) -> Iterable[Union['EventResult', 'Event']]:
         """Propogate this event through the Dataflow."""
-        targets = self.dataflow.get_neighbors(self.target)
+        targets = self.dataflow.get_dataflow().get_neighbors(self.target)
         
         events = []
 
