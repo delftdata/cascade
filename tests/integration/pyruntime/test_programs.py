@@ -99,3 +99,14 @@ def test_branching_integration():
     event = branch.generate_event({"cond_0": False})
     result = client.send(event)
     assert result == 42
+
+    branch = cascade.core.dataflows[DataflowRef("Brancher", "branch_insta")]
+    print(branch.to_dot())
+
+    event = branch.generate_event({"cond_0": True})
+    result = client.send(event)
+    assert result == 33
+
+    event = branch.generate_event({"cond_0": False})
+    result = client.send(event)
+    assert result == 42

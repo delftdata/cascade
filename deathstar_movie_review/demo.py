@@ -1,14 +1,12 @@
 from typing import Literal
+import cascade
+from cascade.dataflow.dataflow import DataflowRef
 from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
+from cascade.dataflow.optimization.parallelization import parallelize
 from cascade.runtime.flink_runtime import FlinkRuntime
-
-from .entities.user import user_op
-from .entities.compose_review import compose_review_op
-from .entities.frontend import frontend_df_parallel, frontend_df_serial, frontend_op, text_op, unique_id_op
-from .entities.movie import movie_id_op, movie_info_op, plot_op
+from tests.integration.flink.utils import create_topics, init_flink_runtime
 
 import os
-from confluent_kafka.admin import AdminClient, NewTopic
 
 KAFKA_BROKER = "localhost:9092"
 KAFKA_FLINK_BROKER = "kafka:9093" # If running a flink cluster and kafka inside docker, the broker url might be different
@@ -19,66 +17,22 @@ INTERNAL_TOPIC = "ds-movie-internal"
 
 EXPERIMENT: Literal["baseline", "pipelined", "parallel"] = os.getenv("EXPERIMENT", "baseline")
 
-def create_topics(*required_topics):
-    conf = {
-        "bootstrap.servers": KAFKA_BROKER
-    }
-
-    admin_client = AdminClient(conf)
-
-    # Fetch existing topics
-    existing_topics = admin_client.list_topics(timeout=5).topics.keys()
-
-    # Find missing topics
-    missing_topics = [topic for topic in required_topics if topic not in existing_topics]
-
-    if missing_topics:
-        print(f"Creating missing topics: {missing_topics}")
-        
-        # Define new topics (default: 1 partition, replication factor 1)
-        new_topics = [NewTopic(topic, num_partitions=32, replication_factor=1) for topic in missing_topics]
-
-        # Create topics
-        futures = admin_client.create_topics(new_topics)
-
-        # Wait for topic creation to complete
-        for topic, future in futures.items():
-            try:
-                future.result()  # Block until the operation is complete
-                print(f"Topic '{topic}' created successfully")
-            except Exception as e:
-                print(f"Failed to create topic '{topic}': {e}")
-    else:
-        print("All required topics exist.")
-
 
 def main():
     create_topics(IN_TOPIC, OUT_TOPIC, INTERNAL_TOPIC)
 
-    runtime = FlinkRuntime(IN_TOPIC, OUT_TOPIC, internal_topic=INTERNAL_TOPIC)
-    runtime.init(kafka_broker=KAFKA_FLINK_BROKER,bundle_time=5, bundle_size=10, thread_mode=True)
+    runtime = init_flink_runtime("deathstar_movie_review.entities.entities", IN_TOPIC, OUT_TOPIC, INTERNAL_TOPIC, kafka_broker=KAFKA_FLINK_BROKER,bundle_time=5, bundle_size=10, thread_mode=False)
        
     print(f"Creating dataflow [{EXPERIMENT}]")
 
-    if EXPERIMENT == "baseline":
-        frontend_op.dataflow = frontend_df_serial()
-    elif EXPERIMENT == "pipelined":
-        frontend_op.dataflow = frontend_df_serial()
-        dead_node_elimination([], [frontend_op])
-    elif EXPERIMENT == "parallel":
-        frontend_op.dataflow = frontend_df_parallel()
-    else:
-        raise RuntimeError(f"EXPERIMENT is not set correctly: {EXPERIMENT}")
+    df_baseline = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
+    df_parallel = parallelize(df_baseline)
+    df_parallel.name = "compose_parallel"
+    cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
+    runtime.add_dataflow(df_parallel)
 
-    runtime.add_operator(compose_review_op)
-    runtime.add_operator(user_op)
-    runtime.add_operator(movie_info_op)
-    runtime.add_operator(movie_id_op)
-    runtime.add_operator(plot_op)
-    runtime.add_stateless_operator(frontend_op)
-    runtime.add_stateless_operator(unique_id_op)
-    runtime.add_stateless_operator(text_op)
-
+    print(cascade.core.dataflows.keys())
+    
     runtime.run()
 
 if __name__ == "__main__":

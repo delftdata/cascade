@@ -13,13 +13,13 @@ from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaRe
 from pyflink.datastream import ProcessFunction, StreamExecutionEnvironment
 from pyflink.datastream.output_tag import OutputTag
 import pickle 
-from cascade.dataflow.dataflow import CallLocal, CollectNode, Event, EventResult, InitClass, InvokeMethod, Node
+from cascade.dataflow.dataflow import CallLocal, CollectNode, DataFlow, DataflowRef, Event, EventResult, InitClass, InvokeMethod, Node
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from confluent_kafka import Producer, Consumer
 import logging
 
 logger = logging.getLogger("cascade")
-logger.setLevel("INFO")
+logger.setLevel("DEBUG")
 console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
@@ -52,21 +52,24 @@ class FlinkRegisterKeyNode(Node):
 
 class FanOutOperator(ProcessFunction):
     """"""
-    def __init__(self, stateful_ops: dict[str, OutputTag], stateless_ops: dict[str, OutputTag]) -> None:
+    def __init__(self, stateful_ops: dict[str, OutputTag], stateless_ops: dict[str, OutputTag], collect_tag: OutputTag) -> None:
         self.stateful_ops = stateful_ops
         self.stateless_ops = stateless_ops
+        self.collect_tag = collect_tag
 
-    def process_element(self, event: Event, ctx: KeyedProcessFunction.Context):
+    def process_element(self, event: Event, ctx: ProcessFunction.Context):
         event = profile_event(event, "FanOut")
 
         logger.debug(f"FanOut Event entered: {event._id}")
 
         if isinstance(event.target, CallLocal):
-            logger.debug(event)
             if event.dataflow.operator_name in self.stateful_ops:
                 tag = self.stateful_ops[event.dataflow.operator_name]
             else:
                 tag = self.stateless_ops[event.dataflow.operator_name]
+
+        elif isinstance(event.target, CollectNode):
+            tag = self.collect_tag
 
         else:
             logger.error(f"FanOut: Wrong target: {event}")
@@ -74,6 +77,26 @@ class FanOutOperator(ProcessFunction):
         
         logger.debug(f"Fanout Event routed to: {tag.tag_id}")
         yield tag, event
+
+class RouterOperator(ProcessFunction):
+    """"""
+    def __init__(self, dataflows: dict['DataflowRef', 'DataFlow']) -> None:
+        self.dataflows = dataflows
+
+    def process_element(self, event_result: tuple[Event, Any], ctx: ProcessFunction.Context):
+        event, result = event_result
+        event = profile_event(event, "FanOut")
+
+        logger.debug(f"FanOut Event entered: {event._id}")
+
+        new_events = list(event.propogate(result, self.dataflows))
+        
+        if len(new_events) == 1 and isinstance(new_events[0], EventResult):
+            logger.debug(f"RouterOperator: Returned {new_events[0]}")
+        else:
+            logger.debug(f"RouterOperator: Propogated {len(new_events)} new Events")
+        
+        yield from new_events
         
 
 class FlinkOperator(KeyedProcessFunction):
@@ -119,9 +142,11 @@ class FlinkOperator(KeyedProcessFunction):
             state = self.state.value()
             if state is None:
                 logger.error(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: State does not exist for key {ctx.get_current_key()}")
-                raise KeyError
-            
-            state = pickle.loads(state)
+                # raise KeyError(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: State does not exist for key {ctx.get_current_key()}")
+                # try to create it anyway
+                state = self.operator.handle_init_class(*event.variable_map).__dict__
+            else:
+                state = pickle.loads(state)
 
             result = self.operator.handle_invoke_method(event.target.method, variable_map=event.variable_map, state=state)
             
@@ -139,14 +164,15 @@ class FlinkOperator(KeyedProcessFunction):
         # if event.target.assign_result_to is not None:
         #     event.variable_map[event.target.assign_result_to] = result
 
-        new_events = list(event.propogate(result))
+        # new_events = list(event.propogate(result, self.operator.dataflows))
         
-        if len(new_events) == 1 and isinstance(new_events[0], EventResult):
-            logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Returned {new_events[0]}")
-        else:
-            logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
+        # if len(new_events) == 1 and isinstance(new_events[0], EventResult):
+        #     logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Returned {new_events[0]}")
+        # else:
+        #     logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Propogated {len(new_events)} new Events")
         
-        yield from new_events
+        # yield from new_events
+        yield (event, result)
 
 class FlinkStatelessOperator(ProcessFunction):
     """Wraps an `cascade.dataflow.datflow.StatefulOperator` in a KeyedProcessFunction so that it can run in Flink.
@@ -168,14 +194,15 @@ class FlinkStatelessOperator(ProcessFunction):
             raise Exception(f"A StatelessOperator cannot compute event type: {event.target.method}")
         
 
-        new_events = list(event.propogate(result))
+        # new_events = list(event.propogate(result, self.operator.dataflows))
         
-        if len(new_events) == 1 and isinstance(new_events[0], EventResult):
-            logger.debug(f"FlinkStatelessOperator {self.operator.name()}[{event._id}]: Returned {new_events[0]}")
-        else:
-            logger.debug(f"FlinkStatelessOperator {self.operator.name()}[{event._id}]: Propogated {len(new_events)} new Events")
+        # if len(new_events) == 1 and isinstance(new_events[0], EventResult):
+        #     logger.debug(f"FlinkStatelessOperator {self.operator.name()}[{event._id}]: Returned {new_events[0]}")
+        # else:
+        #     logger.debug(f"FlinkStatelessOperator {self.operator.name()}[{event._id}]: Propogated {len(new_events)} new Events")
         
-        yield from new_events
+        # yield from new_events
+        yield (event, result)
 
 
 class FlinkSelectAllOperator(KeyedProcessFunction):
@@ -215,12 +242,6 @@ class FlinkSelectAllOperator(KeyedProcessFunction):
         else:
             raise Exception(f"Unexpected target for SelectAllOperator: {event.target}")
 
-class Result(ABC):
-    """A `Result` can be either `Arrived` or `NotArrived`. It is used in the
-    FlinkCollectOperator to determine whether all the events have completed 
-    their computation."""
-    pass
-
 class FlinkCollectOperator(KeyedProcessFunction):
     """Flink implementation of a merge operator."""
     def __init__(self): 
@@ -235,8 +256,10 @@ class FlinkCollectOperator(KeyedProcessFunction):
 
         var_map_num_items = self.var_map.value()
         logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Processing: {event}")
+
+        assert isinstance(event.target, CollectNode)
         
-        total_events = len(event.dataflow.get_dataflow().get_predecessors(event.target))
+        total_events = event.target.num_events
 
         # Add to the map
         if var_map_num_items == None:
@@ -254,7 +277,8 @@ class FlinkCollectOperator(KeyedProcessFunction):
         if num_items == total_events:
             logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Yielding collection")
             event.variable_map = combined_var_map
-            yield from event.propogate(None)
+            # yield from event.propogate(None)
+            yield (event, None)
             self.var_map.clear()
         else:
             self.var_map.update((combined_var_map, num_items))
@@ -371,6 +395,8 @@ class FlinkRuntime():
         self.stateful_operators: list[FlinkOperator] = []
         """List of stateful operator streams, which gets appended at `add_operator`."""
 
+        self.dataflows: dict['DataflowRef', 'DataFlow'] = {}
+
 
     def init(self, kafka_broker="localhost:9092", bundle_time=1, bundle_size=5, parallelism=None, thread_mode=False):
         """Initialise & configure the Flink runtime. 
@@ -429,10 +455,11 @@ class FlinkRuntime():
         config.set_string("pipeline.jars",f"file://{flink_jar};file://{kafka_jar};file://{serializer_jar}")
 
         self.env = StreamExecutionEnvironment.get_execution_environment(config)
-        if parallelism:
-            self.env.set_parallelism(parallelism)
-        parallelism = self.env.get_parallelism()
-        logger.debug(f"FlinkRuntime: parellelism {parallelism}")
+        if not parallelism:
+            parallelism = min(self.env.get_parallelism(), 16)
+        self.env.set_parallelism(parallelism)
+
+        logger.debug(f"FlinkRuntime: parallelism {parallelism}")
 
 
         deserialization_schema = ByteSerializer()
@@ -537,12 +564,18 @@ class FlinkRuntime():
         flink_op = FlinkOperator(op)
 
         self.stateful_operators.append(flink_op)
+        self.dataflows.update(op.dataflows)
 
     def add_stateless_operator(self, op: StatelessOperator):
         """Add a `FlinkStatelessOperator` to the Flink datastream."""
         flink_op = FlinkStatelessOperator(op)
 
         self.stateless_operators.append(flink_op)
+        self.dataflows.update(op.dataflows)
+
+    def add_dataflow(self, dataflow: DataFlow):
+        """When adding extra dataflows, e.g. when testing or for optimized versions"""
+        self.dataflows[dataflow.ref()] = dataflow
 
 
     def run(self, run_async=False, output: Literal["collect", "kafka", "stdout"]="kafka") -> Union[CloseableIterator, None]:
@@ -557,9 +590,10 @@ class FlinkRuntime():
         # create the fanout operator
         stateful_tags = { op.operator.name() : OutputTag(op.operator.name()) for op in self.stateful_operators}
         stateless_tags = { op.operator.name() : OutputTag(op.operator.name()) for op in self.stateless_operators}
+        collect_tag = OutputTag("__COLLECT__")
         logger.debug(f"Stateful tags: {stateful_tags.items()}")
         logger.debug(f"Stateless tags: {stateless_tags.items()}")
-        fanout = self.event_stream.process(FanOutOperator(stateful_tags, stateless_tags)).name("FANOUT OPERATOR").disable_chaining()
+        fanout = self.event_stream.process(FanOutOperator(stateful_tags, stateless_tags, collect_tag)).name("FANOUT OPERATOR").disable_chaining()
 
         # create the streams
         self.stateful_op_streams = []
@@ -597,8 +631,9 @@ class FlinkRuntime():
         else:
             raise RuntimeError("No operators found, were they added to the flink runtime with .add_*_operator()")
 
-        merge_op_stream = (
-            operator_streams.filter(lambda e: isinstance(e, Event) and isinstance(e.target, CollectNode))
+        collect_stream = (
+            fanout
+                .get_side_output(collect_tag)
                 .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
                 .process(FlinkCollectOperator())
                 .name("Collect")
@@ -606,8 +641,9 @@ class FlinkRuntime():
         """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 
         # union with EventResults or Events that don't have a CollectNode target
-        ds = merge_op_stream.union(operator_streams.filter(lambda e: not (isinstance(e, Event) and isinstance(e.target, CollectNode)))).map(lambda e: profile_event(e, "MERGE UNION"))
+        ds = collect_stream.union(operator_streams)
 
+        ds = ds.process(RouterOperator(self.dataflows)).name("ROUTER")
 
         # Output the stream
         results = (

@@ -1,14 +1,15 @@
 from abc import ABC, abstractmethod
 from typing import Any, Generic, Mapping, Protocol, Type, TypeVar, TYPE_CHECKING
 
+
 if TYPE_CHECKING:
     from cascade.frontend.generator.local_block import CompiledLocalBlock
-    from cascade.dataflow.dataflow import DataFlow, InvokeMethod
+    from cascade.dataflow.dataflow import DataFlow, InvokeMethod, DataflowRef
 
 T = TypeVar('T')
 
 class Operator(ABC):
-    dataflows: dict[str, 'DataFlow']
+    dataflows: dict['DataflowRef', 'DataFlow']
     methods: Mapping[str, 'CompiledLocalBlock']
 
     @abstractmethod
@@ -57,7 +58,7 @@ class StatefulOperator(Generic[T], Operator):
     methods, instead reading and modifying the underlying class `T` through a 
     state variable, see `handle_invoke_method`.
     """
-    def __init__(self, entity: Type[T], methods: dict[str, 'CompiledLocalBlock'], dataflows: dict[str, 'DataFlow']):
+    def __init__(self, entity: Type[T], methods: dict[str, 'CompiledLocalBlock'], dataflows: dict['DataflowRef', 'DataFlow']):
         """Create the StatefulOperator from a class and its compiled methods.
         
         Typically, a class could be comprised of split and non-split methods. Take the following example:
@@ -106,7 +107,6 @@ class StatefulOperator(Generic[T], Operator):
 
         ```
         """
-        # methods maps function name to a function. Ideally this is done once in the object 
         self.methods = methods
         self.entity = entity
         self.dataflows = dataflows
@@ -137,11 +137,11 @@ class StatefulOperator(Generic[T], Operator):
 class StatelessOperator(Operator):
     """A StatelessOperator refers to a stateless function and therefore only has
     one dataflow."""
-    def __init__(self, entity: Type, methods: dict[str,  'CompiledLocalBlock'], dataflows: dict[str, 'DataFlow']):
+    def __init__(self, entity: Type, methods: dict[str,  'CompiledLocalBlock'], dataflows: dict['DataflowRef', 'DataFlow']):
         self.entity = entity
         # TODO: extract this from dataflows.blocks
         self.methods = methods
-        # self.dataflows = dataflows
+        self.dataflows = dataflows
         pass
        
     def handle_invoke_method(self, method: 'InvokeMethod', variable_map: dict[str, Any]):

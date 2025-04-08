@@ -33,7 +33,7 @@ experiments = [
     # {"parallelism": 24, "benchmark_args": {**mps(200, producer_threads=10)}},
     # {"parallelism": 24, "benchmark_args": {**mps(400, producer_threads=10)}},
     # {"parallelism": 24, "benchmark_args": {**mps(600, producer_threads=20)}},
-    {"parallelism": 24, "benchmark_args": {**mps(1000, producer_threads=20)}},
+    {"parallelism": 1, "benchmark_args": {**mps(10, producer_threads=1)}},
     # {"parallelism": 24, "benchmark_args": {**mps(2000, producer_threads=40)}},
     # {"parallelism": 24, "benchmark_args": {**mps(1000, threads=20)}},
 ]
@@ -44,8 +44,7 @@ experiments = [
 print("Tearing down docker containers")
 subprocess.run(["docker", "compose", "down"], check=False)
 
-for e in ["pipelined", "parallel", "baseline"]:
-# for e in ["parallel"]:
+for e in ["parallel"]:
     for exp in experiments:
         print(f"Starting experiment {exp}")
         

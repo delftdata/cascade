@@ -43,7 +43,7 @@ def test_entity_calls():
     df = sf.build_df(dataflows, "Test")
     print(df.to_dot())
     for block in df.blocks.values():
-        print(block.to_string())
+        print(block.function_string)
 
     # TODO: Check # entity calls, # of local calls
     assert len(df.nodes) == 5
@@ -86,7 +86,7 @@ def test_branching():
     df = sf.build_df(dataflows, "Test")
     print(df.to_dot())
     for block in df.blocks.values():
-        print(block.to_string())
+        print(block.function_string)
     assert len(df.nodes) == 5
     assert len(df.blocks) == 4
 
@@ -144,7 +144,7 @@ def test_branching_with_entity_calls():
     df = sf.build_df(dataflows, "Test")
     print(df.to_dot())
     for block in df.blocks.values():
-        print(block.to_string())
+        print(block.function_string)
 
     assert len(df.nodes) == 7
     assert len(df.blocks) == 5

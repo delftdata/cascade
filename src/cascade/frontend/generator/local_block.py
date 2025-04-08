@@ -149,8 +149,8 @@ class CompiledLocalBlock:
     # def to_node(self) -> CallLocal:
     #     return CallLocal(InvokeMethod(self.get_method_name()))
 
-    # def get_method_name(self):
-    #     return f"{self.method_base_name}_{self.block_num}"
+    def get_method_name(self):
+        return f"{self.method_base_name}_{self.block_num}"
 
     # def get_method_signature(self) -> str:
     #     return f'variable_map, state'  

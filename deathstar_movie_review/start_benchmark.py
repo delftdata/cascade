@@ -6,6 +6,7 @@ import uuid
 import pandas as pd
 import random
 
+
 from .movie_data import movie_data
 from .workload_data import movie_titles, charset
 import sys
@@ -16,13 +17,11 @@ import argparse
 # import cascade
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
-from cascade.dataflow.dataflow import Event, EventResult, InitClass, OpNode
+from tests.integration.flink.utils import init_cascade_from_module, init_flink_runtime
+import cascade
+from cascade.dataflow.optimization.parallelization import parallelize
+from cascade.dataflow.dataflow import DataflowRef,EventResult
 from cascade.runtime.flink_runtime import FlinkClientSync
- 
-from .entities.user import User
-from .entities.frontend import frontend_df_parallel, frontend_df_serial, frontend_op
-from .entities.movie import MovieInfo, Plot, MovieId
 
 IN_TOPIC = "ds-movie-in"
 OUT_TOPIC = "ds-movie-out"
@@ -34,7 +33,7 @@ OUT_TOPIC = "ds-movie-out"
 # bursts = 100
 
 def populate_user(client: FlinkClientSync):
-    init_user = OpNode(User, InitClass(), read_key_from="username")
+    user_init = cascade.core.dataflows[DataflowRef("User", "__init__")]
     for i in range(1000):
         user_id = f'user{i}'
         username = f'username_{i}'
@@ -54,32 +53,32 @@ def populate_user(client: FlinkClientSync):
             "Password": password_hash,
             "Salt": salt
         }
-        event = Event(init_user, {"username": username, "user_data": user_data}, None)
+        event = user_init.generate_event({"username": username, "user_data": user_data}, key=username)
         client.send(event)
 
 
 def populate_movie(client: FlinkClientSync):
-    init_movie_info = OpNode(MovieInfo, InitClass(), read_key_from="movie_id")
-    init_plot = OpNode(Plot, InitClass(), read_key_from="movie_id")
-    init_movie_id = OpNode(MovieId, InitClass(), read_key_from="title")
-    
+    movieinfo_init = cascade.core.dataflows[DataflowRef("MovieInfo", "__init__")]
+    plot_init = cascade.core.dataflows[DataflowRef("Plot", "__init__")]
+    movieid_init = cascade.core.dataflows[DataflowRef("MovieId", "__init__")]
+
     for movie in movie_data:
         movie_id = movie["MovieId"]
 
         # movie info -> write `movie`
-        event = Event(init_movie_info, {"movie_id": movie_id, "info": movie}, None)
+        event = movieinfo_init.generate_event({"movie_id": movie_id, "info": movie}, key=movie_id)
         client.send(event)
 
         # plot -> write "plot"
-        event = Event(init_plot, {"movie_id": movie_id, "plot": "plot"}, None)
+        event = plot_init.generate_event({"movie_id": movie_id, "plot": "plot"}, key=movie_id)
         client.send(event)
 
         # movie_id_op -> register movie id 
-        event = Event(init_movie_id, {"title": movie["Title"], "movie_id": movie_id}, None)
+        event = movieid_init.generate_event({"title": movie["Title"], "movie_id": movie_id}, key=movie["Title"])
         client.send(event)
 
 
-def compose_review(req_id, op):
+def compose_review(req_id, parallel=False):
     user_index = random.randint(0, 999)
     username = f"username_{user_index}"
     password = f"password_{user_index}"
@@ -87,26 +86,32 @@ def compose_review(req_id, op):
     rating = random.randint(0, 10)
     text = ''.join(random.choice(charset) for _ in range(256))
     
-    return op.dataflow.generate_event({
-            "review": req_id,
-            "user": username,
-            "title": title,
-            "rating": rating,
-            "text": text
+    if parallel:
+        compose = cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")]
+    else:
+        compose = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
+
+    return compose.generate_event({
+            "req_id": req_id, # hacky way to create the compose review object when it doesn't exist
+            "review_0": req_id,
+            "user_0": username,
+            "title_0": title,
+            "rating_0": rating,
+            "text_0": text
         })
 
-def deathstar_workload_generator(op):
+def deathstar_workload_generator(parallel=False):
     c = 1
     while True:
-        yield compose_review(c, op)
+        yield compose_review(c, parallel)
         c += 1
 
 
 def benchmark_runner(args) -> dict[int, dict]:
-    proc_num, op, requests_per_second, sleep_time, bursts = args
+    proc_num, requests_per_second, sleep_time, bursts, parallel = args
     print(f'Generator: {proc_num} starting')
     client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
-    deathstar_generator = deathstar_workload_generator(op)
+    deathstar_generator = deathstar_workload_generator(parallel)
     start = timer()
     
     for b in range(bursts):
@@ -209,19 +214,15 @@ def main():
     print(f"Starting with args:\n{args}")
     print(f"Actual requests per second is {int(rps_per_thread * args.threads)} (due to rounding)")
 
-
-    if EXPERIMENT == "baseline":
-        frontend_op.dataflow = frontend_df_serial()
-    elif EXPERIMENT == "pipelined":
-        frontend_op.dataflow = frontend_df_serial()
-        dead_node_elimination([], [frontend_op])
-    elif EXPERIMENT == "parallel":
-        frontend_op.dataflow = frontend_df_parallel()
-    else:
-        raise RuntimeError(f"EXPERIMENT is not set correctly: {EXPERIMENT}")
-
+    init_cascade_from_module("deathstar_movie_review.entities.entities")
 
     init_client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
+
+    df_baseline = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
+    df_parallel = parallelize(df_baseline)
+    df_parallel.name = "compose_parallel"
+    cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
+    print(cascade.core.dataflows.keys())
      
     if not args.no_init:
         print("Populating...")
@@ -233,8 +234,9 @@ def main():
         time.sleep(1)
 
     print("Starting benchmark")
+    parallel = args.experiment == "parallel"
 
-    func_args = [(t, frontend_op, rps_per_thread, sleep_time, args.seconds) for t in range(args.threads)]
+    func_args = [(t, rps_per_thread, sleep_time, args.seconds, parallel) for t in range(args.threads)]
     with Pool(args.threads) as p:
         results = p.map(benchmark_runner, func_args)
 

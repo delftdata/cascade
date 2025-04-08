@@ -91,9 +91,9 @@ def init():
                 df = DataflowBuilder(method.method_node).build(dataflows, op_name)
             
             dataflows[df.ref()] = df
-            # op.dataflows[df.name] = df
+            op.dataflows[df.ref()] = df
             for name, b in df.blocks.items():
-                op.methods[name] = b.compile()
+                op.methods[name] = b
 
 
 def get_operator(op_name: str):

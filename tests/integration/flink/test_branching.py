@@ -4,6 +4,7 @@ from pyflink.datastream.data_stream import CloseableIterator
 from cascade.dataflow.dataflow import DataflowRef
 from cascade.dataflow.optimization.parallelization import parallelize
 
+from cascade.runtime.flink_runtime import FlinkClientSync
 import tests.integration.flink.utils as utils
 from tests.integration.flink.utils import wait_for_event_id
 import pytest
@@ -18,7 +19,8 @@ def test_branching_pyflink():
     
     utils.create_topics()
 
-    runtime, client = utils.init_flink_runtime("tests.integration.branching")
+    runtime = utils.init_flink_runtime("tests.integration.branching")
+    client = FlinkClientSync()
     collector = runtime.run(run_async=True, output="collect")
     assert isinstance(collector, CloseableIterator)
 

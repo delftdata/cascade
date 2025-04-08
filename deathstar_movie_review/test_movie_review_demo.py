@@ -3,8 +3,10 @@ import sys
 import os
 
 
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
+from cascade.runtime.flink_runtime import FlinkClientSync
 from cascade.dataflow.dataflow import DataflowRef
 from cascade.dataflow.optimization.parallelization import parallelize
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
@@ -43,7 +45,17 @@ def test_deathstar_movie_demo_flink():
 
     utils.create_topics()
 
-    runtime, client = utils.init_flink_runtime("deathstar_movie_review.entities.entities")
+    runtime = utils.init_flink_runtime("deathstar_movie_review.entities.entities")
+    compose_df = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
+    df_parallel = parallelize(compose_df)
+    df_parallel.name = "compose_parallel"
+    cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
+    runtime.add_dataflow(df_parallel)
+    print(df_parallel.to_dot())
+    assert len(df_parallel.entry) == 4
+
+
+    client = FlinkClientSync()
     runtime.run(run_async=True)
 
     try:
@@ -52,11 +64,6 @@ def test_deathstar_movie_demo_flink():
         client.close()
 
 def deathstar_movie_demo(client):
-    user_op = cascade.core.operators["User"]
-    compose_op = cascade.core.operators["ComposeReview"]
-    movie_op = cascade.core.operators["MovieId"]
-    frontend_op = cascade.core.operators["Frontend"]
-
     compose_df = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
     
     for df in cascade.core.dataflows.values():
@@ -127,12 +134,8 @@ def deathstar_movie_demo(client):
 
 
 
-    ## NOW DO IT PARALLEL!
-    df_parallel = parallelize(compose_df)
-    df_parallel.name = "compose_parallel"
-    cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
-    print(df_parallel.to_dot())
-    assert len(df_parallel.entry) == 4
+    ### PARALLEL ###
+    df_parallel = cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")]
 
 
     # make the review

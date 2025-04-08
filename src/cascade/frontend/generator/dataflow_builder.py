@@ -220,7 +220,7 @@ class DataflowBuilder:
                 block = LocalBlock(list(statement_block), self.name, block_num, op_name)
                 block_num += 1
                 node = block.to_node()
-                df.add_block(block)
+                df.add_block(block.compile())
             node_id_map[statement_block] = node.id
             df.add_node(node)
 

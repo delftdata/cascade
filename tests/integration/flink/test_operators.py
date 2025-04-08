@@ -2,6 +2,7 @@
 
 from pyflink.datastream.data_stream import CloseableIterator
 from cascade.dataflow.dataflow import DataflowRef, Event
+from cascade.runtime.flink_runtime import FlinkClientSync
 import tests.integration.flink.utils as utils
 from tests.integration.flink.utils import wait_for_event_id
 
@@ -17,7 +18,8 @@ def test_stateful_operator():
     
     utils.create_topics()
 
-    runtime, client = utils.init_flink_runtime("tests.integration.common")
+    runtime = utils.init_flink_runtime("tests.integration.common")
+    client = FlinkClientSync()
     collector = runtime.run(run_async=True, output="collect")
     assert isinstance(collector, CloseableIterator)
 
@@ -77,7 +79,8 @@ def test_stateless_operator():
     
     utils.create_topics()
 
-    runtime, client = utils.init_flink_runtime("tests.integration.stateless")
+    runtime = utils.init_flink_runtime("tests.integration.stateless")
+    client = FlinkClientSync()
     collector = runtime.run(run_async=True, output="collect")
     assert isinstance(collector, CloseableIterator)
 

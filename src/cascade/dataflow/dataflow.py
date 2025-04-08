@@ -7,7 +7,7 @@ import uuid
 import cascade
 
 if TYPE_CHECKING:
-    from cascade.frontend.generator.local_block import LocalBlock
+    from cascade.frontend.generator.local_block import CompiledLocalBlock
     from cascade.dataflow.operator import Operator
 
 
@@ -41,14 +41,14 @@ class Node(ABC):
         Node._id_counter += 1
 
     @abstractmethod
-    def propogate(self, event: 'Event', targets: list['Node'], result: Any, **kwargs) -> list['Event']:
+    def propogate(self, event: 'Event', targets: list['Node'], result: Any, df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> list['Event']:
         pass
 
 @dataclass
 class IfNode(Node):
     predicate_var: str
 
-    def propogate(self, event: 'Event', targets: List[Node], result: Any, **kwargs) -> List['Event']:
+    def propogate(self, event: 'Event', targets: List[Node], result: Any, df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
         
         if_cond = event.variable_map[self.predicate_var]
         print(self.predicate_var)
@@ -79,8 +79,11 @@ class DataflowRef:
     operator_name: str
     dataflow_name: str
 
-    def get_dataflow(self) -> 'DataFlow':
-        return cascade.core.dataflows[self]
+    # def get_dataflow(self) -> 'DataFlow':
+    #     try:
+    #         return cascade.core.dataflows[self]
+    #     except KeyError as e:
+    #         raise KeyError(f"DataflowRef {self} not found in cascade.core.dataflows")
     
     def __repr__(self) -> str:
         return f"{self.operator_name}.{self.dataflow_name}"
@@ -92,7 +95,7 @@ class DataflowRef:
 @dataclass
 class CallEntity(Node):
     """A node in a `DataFlow` corresponding to the call of another dataflow"""
-    dataflow: DataflowRef
+    dataflow: 'DataflowRef'
     """The dataflow to call."""
 
     variable_rename: dict[str, str]
@@ -104,14 +107,14 @@ class CallEntity(Node):
     keyby: Optional[str] = None
     """The key, for calls to Stateful Entities"""
 
-    def propogate(self, event: 'Event', targets: List[Node], result: Any) -> List['Event']:
+    def propogate(self, event: 'Event', targets: List[Node], result: Any, df_map: dict['DataflowRef', 'DataFlow']) -> List['Event']:
         # remap the variable map of event into the new event
         new_var_map = {key: event.variable_map[value] for key, value in self.variable_rename.items()}
         if self.keyby:
             new_key = event.variable_map[self.keyby]
         else:
             new_key = None
-        df = cascade.core.get_dataflow(self.dataflow)
+        df = df_map[self.dataflow]
         new_targets = df.entry
         if not isinstance(new_targets, list):
             new_targets = [new_targets]
@@ -143,7 +146,7 @@ class CallEntity(Node):
 class CallLocal(Node):
     method: Union[InvokeMethod, InitClass]
 
-    def propogate(self, event: 'Event', targets: List[Node], result: Any, **kwargs) -> List['Event']:
+    def propogate(self, event: 'Event', targets: List[Node], result: Any, df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
         # For simple calls, we only need to change the target.
         # Multiple targets results in multiple events
         events = []
@@ -166,8 +169,9 @@ class CollectNode(Node):
     
     It will aggregate incoming edges and output them as a list to the outgoing edge.
     Their actual implementation is runtime-dependent."""
+    num_events: int
 
-    def propogate(self, event: 'Event', targets: List[Node], result: Any, **kwargs) -> List['Event']:
+    def propogate(self, event: 'Event', targets: List[Node], result: Any, df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
         return [Event(
                     target,
                     event.variable_map, 
@@ -217,15 +221,15 @@ class DataFlow:
         self.adjacency_list: dict[int, list[int]] = {}
         self.nodes: dict[int, Node] = {}
         self.entry: List[Node] = []
-        self.op_name = op_name
+        self.operator_name = op_name
         if args:
             self.args: list[str] = args
         else:
             self.args = []
-        self.blocks: dict[str, 'LocalBlock'] = {}
+        self.blocks: dict[str, 'CompiledLocalBlock'] = {}
 
     def ref(self) -> DataflowRef:
-        return DataflowRef(self.op_name, self.name)
+        return DataflowRef(self.operator_name, self.name)
     # def get_operator(self) -> Operator:
     #     return cascade.core.operators[self.op_name]
 
@@ -235,7 +239,7 @@ class DataFlow:
             self.adjacency_list[node.id] = []
             self.nodes[node.id] = node
 
-    def add_block(self, block: 'LocalBlock'):
+    def add_block(self, block: 'CompiledLocalBlock'):
         self.blocks[block.get_method_name()] = block
 
     def add_edge(self, edge: Edge):
@@ -314,7 +318,7 @@ class DataFlow:
 
     def to_dot(self) -> str:
         """Output the DataFlow graph in DOT (Graphviz) format."""
-        lines = [f"digraph {self.op_name}.{self.name} {{"]
+        lines = [f"digraph {self.operator_name}.{self.name} {{"]
 
         # Add nodes
         for node in self.nodes.values():
@@ -343,8 +347,8 @@ class DataFlow:
             # TODO: propogate at "compile time" instead of doing this every time
             local_events = []
             for ev in events:
-                if isinstance(ev.target, CallEntity):
-                    local_events.extend(ev.propogate(None))
+                if isinstance(ev.target, CallEntity) or isinstance(ev.target, IfNode):
+                    local_events.extend(ev.propogate(None, cascade.core.dataflows))
                 else:
                     local_events.append(ev)
 
@@ -352,7 +356,7 @@ class DataFlow:
 
        
     def __str__(self) -> str:
-        return f"{self.op_name}.{self.name}" 
+        return f"{self.operator_name}.{self.name}" 
 
 def metadata_dict() -> dict:
     return {
@@ -404,9 +408,10 @@ class Event():
             # Assign a unique ID 
             self._id = uuid.uuid4().int
 
-    def propogate(self, result: Any) -> Iterable[Union['EventResult', 'Event']]:
+    def propogate(self, result: Any, df_map: dict['DataflowRef','DataFlow']) -> Iterable[Union['EventResult', 'Event']]:
         """Propogate this event through the Dataflow."""
-        targets = self.dataflow.get_dataflow().get_neighbors(self.target)
+        targets = df_map[self.dataflow].get_neighbors(self.target)
+        
         
         events = []
 
@@ -439,12 +444,12 @@ class Event():
                 return
         else:
             current_node = self.target
-            events = current_node.propogate(self, targets, result)
+            events = current_node.propogate(self, targets, result, df_map)
 
         for event in events:
             if isinstance(event.target, CallEntity) or isinstance(event.target, IfNode):
                 # recursively propogate CallEntity events
-                yield from event.propogate(None)
+                yield from event.propogate(None, df_map)
             else:
                 yield event
 @dataclass

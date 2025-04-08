@@ -204,7 +204,7 @@ def parallelize(df: DataFlow):
             reads = set(node.variable_rename.values())
             writes = {result} if (result := node.assign_result_to) else set()
         elif isinstance(node, CallLocal):
-            operator = cascade.core.operators[df.op_name]
+            operator = cascade.core.operators[df.operator_name]
             method = df.blocks[node.method.method_name]
             reads = method.reads
             writes = method.writes
@@ -230,7 +230,7 @@ def parallelize(df: DataFlow):
                 except KeyError:
                     pass
 
-    updated = DataFlow(df.name, df.op_name)
+    updated = DataFlow(df.name, df.operator_name)
     updated.entry = [n_map[node_id] for node_id in nodes_with_indegree_0]
     prev_node = None
 
@@ -253,7 +253,7 @@ def parallelize(df: DataFlow):
             # TODO: maybe collect node should just infer from it's predecessors?
             # like it can only have DataFlowNode predecessors
             # TODO: rename DataflowNode to EntityCall
-            collect_node = CollectNode()
+            collect_node = CollectNode(len(nodes_with_indegree_0))
             for node_id in nodes_with_indegree_0:
                 if prev_node:
                     updated.add_edge(Edge(prev_node, n_map[node_id]))

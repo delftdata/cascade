@@ -1,5 +1,6 @@
 import threading
 from typing import List, Union
+import cascade
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from cascade.dataflow.dataflow import CallEntity, CallLocal, CollectNode, Event, EventResult, InitClass, InvokeMethod
 from queue import Empty, Queue
@@ -31,7 +32,7 @@ class PythonStatefulOperator():
             )
             self.states[key] = state
 
-        new_events = event.propogate(result)
+        new_events = event.propogate(result, cascade.core.dataflows)
         if isinstance(new_events, EventResult):
             yield new_events
         else:
@@ -54,7 +55,7 @@ class PythonStatelessOperator():
         else:
             raise Exception(f"A StatelessOperator cannot compute event type: {event.target.method}")
         
-        new_events = event.propogate(result)
+        new_events = event.propogate(result, cascade.core.dataflows)
         if isinstance(new_events, EventResult):
             yield new_events
         else:
@@ -71,7 +72,8 @@ class PythonCollectOperator():
         else:
             self.state[key].append(event)
 
-        n = len(event.dataflow.get_dataflow().get_predecessors(event.target))
+        assert isinstance(event.target, CollectNode)
+        n = event.target.num_events
         print(f"PythonCollectOperator: collected {len(self.state[key])}/{n} for event {event._id}")
 
         if len(self.state[key]) == n:
@@ -80,7 +82,7 @@ class PythonCollectOperator():
                 var_map.update(event.variable_map)
 
             event.variable_map = var_map
-            new_events = event.propogate(None)
+            new_events = event.propogate(None, cascade.core.dataflows)
             if isinstance(new_events, EventResult):
                 yield new_events
             else:

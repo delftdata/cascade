@@ -4,6 +4,7 @@ from pyflink.datastream.data_stream import CloseableIterator
 from cascade.dataflow.dataflow import DataflowRef
 from cascade.dataflow.optimization.parallelization import parallelize
 
+from cascade.runtime.flink_runtime import FlinkClientSync
 import tests.integration.flink.utils as utils
 from tests.integration.flink.utils import wait_for_event_id
 import pytest
@@ -18,8 +19,21 @@ def test_collect_operator():
     
     utils.create_topics()
 
-    runtime, client = utils.init_flink_runtime("tests.integration.common")
+    runtime = utils.init_flink_runtime("tests.integration.common")
+
+    client = FlinkClientSync()
+
+    user_buy_2 = cascade.core.dataflows[DataflowRef("User", "buy_2_items")]
+
+    df_parallel = parallelize(user_buy_2)
+    df_parallel.name = "buy_2_parallel"
+    cascade.core.dataflows[DataflowRef("User", "buy_2_parallel")] = df_parallel
+    print(df_parallel.to_dot())
+    runtime.add_dataflow(df_parallel)
+    assert len(df_parallel.entry) == 2
+    
     collector = runtime.run(run_async=True, output="collect")
+
     assert isinstance(collector, CloseableIterator)
 
     try:
@@ -37,12 +51,7 @@ def _test_collect_operator(client, collector):
     item_init = cascade.core.dataflows[DataflowRef("Item", "__init__")]
     user_init = cascade.core.dataflows[DataflowRef("User", "__init__")]
     user_get_balance = cascade.core.dataflows[DataflowRef("User", "get_balance")]
-
-    df_parallel = parallelize(user_buy_2)
-    df_parallel.name = "buy_2_parallel"
-    cascade.core.dataflows[DataflowRef("User", "buy_2_parallel")] = df_parallel
-    print(df_parallel.to_dot())
-    assert len(df_parallel.entry) == 2
+    df_parallel = cascade.core.dataflows[DataflowRef("User", "buy_2_parallel")]
 
 
     event = user_init.generate_event({"key": "foo", "balance": 100}, key="foo")
