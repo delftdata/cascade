@@ -44,9 +44,35 @@ class Node(ABC):
     def propogate(self, event: 'Event', targets: list['Node'], result: Any, **kwargs) -> list['Event']:
         pass
 
+@dataclass
 class IfNode(Node):
+    predicate_var: str
+
     def propogate(self, event: 'Event', targets: List[Node], result: Any, **kwargs) -> List['Event']:
-        return super().propogate(event, targets, result, **kwargs)
+        
+        if_cond = event.variable_map[self.predicate_var]
+        print(self.predicate_var)
+        print(if_cond)
+        targets = []
+        for edge in event.target.outgoing_edges:
+            assert edge.if_conditional is not None
+            if edge.if_conditional == if_cond:
+                targets.append(edge.to_node)
+
+
+        events = []
+        for target in targets:
+            ev = Event(
+                target,
+                event.variable_map, 
+                event.dataflow,
+                call_stack=event.call_stack,
+                _id=event._id,
+                metadata=event.metadata,
+                key=event.key)
+            
+            events.append(ev)
+        return events
 
 @dataclass
 class DataflowRef:
@@ -295,9 +321,14 @@ class DataFlow:
             lines.append(f'    {node.id} [label="{node}"];')
 
         # Add edges
-        for from_id, to_ids in self.adjacency_list.items():
-            for to_id in to_ids:
-                lines.append(f"    {from_id} -> {to_id};")
+        for node in self.nodes.values():
+            for edge in node.outgoing_edges:
+
+                line = f"    {edge.from_node.id} -> {edge.to_node.id}"
+                if edge.if_conditional is not None:
+                    line += f' [label="{edge.if_conditional}"]'
+                line += ";"
+                lines.append(line)
 
         lines.append("}")
         return "\n".join(lines)
@@ -411,7 +442,7 @@ class Event():
             events = current_node.propogate(self, targets, result)
 
         for event in events:
-            if isinstance(event.target, CallEntity):
+            if isinstance(event.target, CallEntity) or isinstance(event.target, IfNode):
                 # recursively propogate CallEntity events
                 yield from event.propogate(None)
             else:

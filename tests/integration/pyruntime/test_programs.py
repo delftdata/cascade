@@ -83,3 +83,19 @@ def test_operator_chaining():
     event = a_call_c.generate_event({"b_0": "bbb", "c_0": "ccc"}, key="aaa")
     result = client.send(event)
     assert result == 84
+
+
+def test_branching_integration():
+    file_name = "branching.py"
+
+    runtime, client = init_python_runtime(file_name)
+    branch = cascade.core.dataflows[DataflowRef("Brancher", "branch")]
+    print(branch.to_dot())
+
+    event = branch.generate_event({"cond_0": True})
+    result = client.send(event)
+    assert result == 33
+
+    event = branch.generate_event({"cond_0": False})
+    result = client.send(event)
+    assert result == 42

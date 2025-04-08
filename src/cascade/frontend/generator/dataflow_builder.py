@@ -48,6 +48,8 @@ def split_cfg(blocked_statement_graph: nx.DiGraph) -> nx.DiGraph:
     split_graph: nx.DiGraph = blocked_statement_graph.copy()
     for node in list(split_graph.nodes):
         in_nodes = split_graph.predecessors(node)
+        in_edges = list(split_graph.in_edges(node, data=True))
+        out_edges = list(split_graph.out_edges(node, data=True))
         out_nodes = split_graph.successors(node)
 
         # create the new nodes
@@ -62,10 +64,10 @@ def split_cfg(blocked_statement_graph: nx.DiGraph) -> nx.DiGraph:
             u = v
 
         # connect the outer edges
-        for u in in_nodes:
-            split_graph.add_edge(u, new_nodes[0])
-        for v in out_nodes:
-            split_graph.add_edge(new_nodes[-1], v)
+        for u, v, ddict in in_edges:
+            split_graph.add_edge(u, new_nodes[0], **ddict)
+        for u, v, ddict in out_edges:
+            split_graph.add_edge(new_nodes[-1], v, **ddict)
 
     return split_graph
 
@@ -159,8 +161,8 @@ def blocked_cfg(statement_graph: nx.DiGraph, entry: Statement) -> nx.DiGraph:
         # connect them to this node
         first_then = list(then_blocked_graph.nodes)[0]
         first_orelse = list(orelse_blocked_graph.nodes)[0]
-        graph.add_edge(last_node, first_then)
-        graph.add_edge(last_node, first_orelse)
+        graph.add_edge(last_node, first_then, type=True)
+        graph.add_edge(last_node, first_orelse, type=False)
 
         # connect the rest of the graph at the end (recursively)
         if len(succ_then) == 1 or len(succ_orelse) == 1:
@@ -211,7 +213,9 @@ class DataflowBuilder:
             if len(statement_block) == 1 and statement_block[0].is_remote():
                 node = to_entity_call(statement_block[0], self.type_map, dataflows)
             elif len(statement_block) == 1 and statement_block[0].is_predicate:
-                node = IfNode()
+                rawblock = statement_block[0].block
+                assert isinstance(rawblock, nodes.Bool), type(rawblock)
+                node = IfNode(repr(rawblock.value))
             else:
                 block = LocalBlock(list(statement_block), self.name, block_num, op_name)
                 block_num += 1

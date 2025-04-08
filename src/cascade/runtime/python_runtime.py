@@ -116,15 +116,12 @@ class PythonRuntime():
                     yield from self.statefuloperators[event.dataflow.operator_name].process(event)
                 else:
                     yield from self.statelessoperators[event.dataflow.operator_name].process(event)
-            elif isinstance(event.target, CallEntity):
-                new_events = event.propogate(None)
-                if isinstance(new_events, EventResult):
-                    yield new_events
-                else:
-                    yield from new_events
 
             elif isinstance(event.target, CollectNode):
                 yield from self.collect.process(event)
+
+            else:
+                raise ValueError(f"Event target type can only be CallLocal or CollectNode, not {event.target}")
             
     
         events = []

@@ -72,6 +72,10 @@ def test_branching():
     print(sf.cfg.to_dot())
     new = blocked_cfg(sf.cfg.graph, sf.cfg.get_single_source())
 
+    print_digraph(new)
+
+    print_digraph(split_cfg(new))
+
     assert len(new.nodes) == 5
     
     dataflows = {
@@ -86,17 +90,17 @@ def test_branching():
     assert len(df.nodes) == 5
     assert len(df.blocks) == 4
 
-def print_digraph(graph):
+def print_digraph(graph: nx.DiGraph):
     for node in graph.nodes:
         for s in node:
             print(s.block_num, end=" ")
         print()
-    for edge in graph.edges:
-        for s in edge[0]:
-            print(s.block_num, end=" ")
+    for u, v, c in graph.edges.data('type', default=None):
+        print(u[0].block_num, end=" ")
         print("->", end= " ")
-        for s in edge[1]:
-            print(s.block_num, end=" ")
+        print(v[0].block_num, end=" ")
+        if c is not None:
+            print(f' [label="{c}"]', end=" ")
         print()
 
 def test_branching_with_entity_calls():
