@@ -116,8 +116,6 @@ class CallEntity(Node):
             new_key = None
         df = df_map[self.dataflow]
         new_targets = df.entry
-        if not isinstance(new_targets, list):
-            new_targets = [new_targets]
 
         # Tail call elimination:
         # "targets" corresponds to where to go after this CallEntity finishes

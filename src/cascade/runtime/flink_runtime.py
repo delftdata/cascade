@@ -19,7 +19,7 @@ from confluent_kafka import Producer, Consumer
 import logging
 
 logger = logging.getLogger("cascade")
-logger.setLevel("DEBUG")
+logger.setLevel("INFO")
 console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
@@ -85,9 +85,9 @@ class RouterOperator(ProcessFunction):
 
     def process_element(self, event_result: tuple[Event, Any], ctx: ProcessFunction.Context):
         event, result = event_result
-        event = profile_event(event, "FanOut")
+        event = profile_event(event, "Router")
 
-        logger.debug(f"FanOut Event entered: {event._id}")
+        logger.debug(f"RouterOperator Event entered: {event._id}")
 
         new_events = list(event.propogate(result, self.dataflows))
         
@@ -123,7 +123,7 @@ class FlinkOperator(KeyedProcessFunction):
         assert(key is not None)
 
         if isinstance(event.target.method, InitClass):
-            result = self.operator.handle_init_class(**event.variable_map)
+            result = self.operator.handle_init_class(**event.variable_map).__dict__
 
             # Register the created key in FlinkSelectAllOperator
             if SELECT_ALL_ENABLED:
@@ -136,7 +136,7 @@ class FlinkOperator(KeyedProcessFunction):
                 logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Registering key: {register_key_event}")
                 yield register_key_event
 
-            self.state.update(pickle.dumps(result.__dict__))
+            self.state.update(pickle.dumps(result))
 
         elif isinstance(event.target.method, InvokeMethod):
             state = self.state.value()
@@ -593,7 +593,7 @@ class FlinkRuntime():
         collect_tag = OutputTag("__COLLECT__")
         logger.debug(f"Stateful tags: {stateful_tags.items()}")
         logger.debug(f"Stateless tags: {stateless_tags.items()}")
-        fanout = self.event_stream.process(FanOutOperator(stateful_tags, stateless_tags, collect_tag)).name("FANOUT OPERATOR").disable_chaining()
+        fanout = self.event_stream.process(FanOutOperator(stateful_tags, stateless_tags, collect_tag)).name("FANOUT OPERATOR")#.disable_chaining()
 
         # create the streams
         self.stateful_op_streams = []
@@ -605,6 +605,7 @@ class FlinkRuntime():
                     .key_by(lambda e: e.key)
                     .process(flink_op)
                     .name("STATEFUL OP: " + flink_op.operator.name())
+                    .process(RouterOperator(self.dataflows)).name("ROUTER")
             )
             self.stateful_op_streams.append(op_stream)
 
@@ -616,6 +617,7 @@ class FlinkRuntime():
                     .get_side_output(tag)
                     .process(flink_op)
                     .name("STATELESS OP: " + flink_op.operator.name())
+                    .process(RouterOperator(self.dataflows)).name("ROUTER")
             )
             self.stateless_op_streams.append(op_stream)
 
@@ -637,13 +639,14 @@ class FlinkRuntime():
                 .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
                 .process(FlinkCollectOperator())
                 .name("Collect")
+                .process(RouterOperator(self.dataflows)).name("ROUTER")
         )
         """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 
         # union with EventResults or Events that don't have a CollectNode target
         ds = collect_stream.union(operator_streams)
 
-        ds = ds.process(RouterOperator(self.dataflows)).name("ROUTER")
+        # ds = ds.process(RouterOperator(self.dataflows)).name("ROUTER")
 
         # Output the stream
         results = (
