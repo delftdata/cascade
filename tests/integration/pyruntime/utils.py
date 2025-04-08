@@ -7,9 +7,8 @@ import cascade
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from cascade.runtime.python_runtime import PythonClientSync, PythonRuntime
 
-def init_python_runtime(file_name: str) -> tuple[PythonRuntime, PythonClientSync]:     
+def init_python_runtime(import_module_name: str) -> tuple[PythonRuntime, PythonClientSync]:     
     cascade.core.clear() 
-    import_module_name: str = f'tests.integration.pyruntime.{file_name.strip(".py")}'
     exec(f'import {import_module_name}')
     cascade.core.init()
 

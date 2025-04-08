@@ -9,7 +9,7 @@ from tests.integration.pyruntime.utils import init_python_runtime
 
 
 def test_checkout_item():
-    file_name = "checkout_item.py"
+    file_name = "tests.integration.pyruntime.checkout_item"
 
     runtime, client = init_python_runtime(file_name)
     item_op = cascade.core.operators["Item"]
@@ -44,7 +44,7 @@ def test_checkout_item():
     assert not result 
     
 def test_operator_chaining():
-    file_name = "operator_chaining.py"
+    file_name = "tests.integration.pyruntime.operator_chaining"
 
     runtime, client = init_python_runtime(file_name)
     a_op = cascade.core.operators["A"]
@@ -86,7 +86,7 @@ def test_operator_chaining():
 
 
 def test_branching_integration():
-    file_name = "branching.py"
+    file_name = "tests.integration.branching"
 
     runtime, client = init_python_runtime(file_name)
     branch = cascade.core.dataflows[DataflowRef("Brancher", "branch")]
