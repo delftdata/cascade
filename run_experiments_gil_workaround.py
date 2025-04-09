@@ -33,7 +33,7 @@ experiments = [
     # {"parallelism": 24, "benchmark_args": {**mps(200, producer_threads=10)}},
     # {"parallelism": 24, "benchmark_args": {**mps(400, producer_threads=10)}},
     # {"parallelism": 24, "benchmark_args": {**mps(600, producer_threads=20)}},
-    {"parallelism": 24, "benchmark_args": {**mps(2000, producer_threads=30)}},
+    {"parallelism": 24, "benchmark_args": {**mps(2000, producer_threads=20)}},
     # {"parallelism": 24, "benchmark_args": {**mps(2000, producer_threads=40)}},
     # {"parallelism": 24, "benchmark_args": {**mps(1000, threads=20)}},
 ]

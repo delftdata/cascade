@@ -21,7 +21,7 @@ EXPERIMENT: Literal["baseline", "pipelined", "parallel"] = os.getenv("EXPERIMENT
 def main():
     create_topics(IN_TOPIC, OUT_TOPIC, INTERNAL_TOPIC)
 
-    runtime = init_flink_runtime("deathstar_movie_review.entities.entities", IN_TOPIC, OUT_TOPIC, INTERNAL_TOPIC, kafka_broker=KAFKA_FLINK_BROKER,bundle_time=5, bundle_size=10, thread_mode=True)
+    runtime = init_flink_runtime("deathstar_movie_review.entities.entities", IN_TOPIC, OUT_TOPIC, INTERNAL_TOPIC, kafka_broker=KAFKA_FLINK_BROKER,bundle_time=5, bundle_size=10, thread_mode=True, parallelism=None)
        
     print(f"Creating dataflow [{EXPERIMENT}]")
 

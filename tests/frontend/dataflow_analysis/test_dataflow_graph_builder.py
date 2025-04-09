@@ -26,7 +26,7 @@ def test_linear_program():
     # TODO: check that the produced ssa code made variables for 
     #  - item1.get_quantity()
     #  - item2.get_quantity()
-    df: ControlFlowGraph = ControlFlowGraphBuilder.build([get_total] + get_total.body)
+    df: ControlFlowGraph = ControlFlowGraphBuilder.build([get_total] + get_total.body, globals=[])
     for n in df.graph.nodes:
         print(n)
     for u, v in df.graph.edges:
@@ -49,7 +49,7 @@ def test_ssa():
     # TODO: check that the produced ssa code made variables for 
     #  - item1.get_quantity()
     #  - item2.get_quantity()
-    df: ControlFlowGraph = ControlFlowGraphBuilder.build([get_total] + get_total.body)
+    df: ControlFlowGraph = ControlFlowGraphBuilder.build([get_total] + get_total.body, globals=[])
     print(df.graph.nodes)
     print(df.graph.edges)
 
@@ -76,6 +76,6 @@ def test_if_else_branches():
     # TODO: check that the produced ssa code made variables for 
     #  - item1.get_quantity()
     #  - item2.get_quantity()
-    df: ControlFlowGraph = ControlFlowGraphBuilder.build([test] + test.body)
+    df: ControlFlowGraph = ControlFlowGraphBuilder.build([test] + test.body, globals=[])
     # print(df.graph.nodes)
     # print(df.graph.edges)

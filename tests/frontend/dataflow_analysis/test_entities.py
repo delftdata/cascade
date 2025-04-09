@@ -150,3 +150,36 @@ class ComposeReview:
     compose_review = ComposeReview("req", {})
     func({"review_id_0": 123}, compose_review.__dict__)
     assert compose_review.review_data["review_id"] == 123
+
+
+def test_import():
+    program = dedent("""
+class Randomer:
+    @staticmethod
+    def rand():
+        r = random.random()
+        return r
+""")
+
+    cfg: Cfg = setup_cfg(program)
+    blocks = cfg.block_list
+    user_class = blocks[2] 
+    upload_unique: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
+    
+    import random
+    sf = DataflowBuilder(upload_unique, {'random': random})
+    sf.build_cfg()
+    for node in sf.cfg.get_nodes():
+        print(node)
+    
+    dataflows = {
+        DataflowRef("Randomer", "rand"): DataFlow("rand", "Randomer", []),
+    }
+
+    df = sf.build(dataflows, "Randomer")
+
+    for block in df.blocks.values():
+        print(block.function_string)
+
+    rands = {df.blocks['rand_0'].call_block(variable_map={}, state=None) for x in range(10)}
+    assert len(rands) == 10

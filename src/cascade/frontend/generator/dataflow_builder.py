@@ -1,3 +1,4 @@
+from typing import Any, Optional
 import networkx as nx
 
 from cascade.dataflow.dataflow import DataFlow, DataflowRef, IfNode
@@ -184,13 +185,15 @@ def blocked_cfg(statement_graph: nx.DiGraph, entry: Statement) -> nx.DiGraph:
 
 
 class DataflowBuilder:
-    def __init__(self, function_def: nodes.FunctionDef):
+    def __init__(self, function_def: nodes.FunctionDef, globals: Optional[dict[str, Any]] = None):
         self.function_def = function_def
         self.name = self.function_def.name
+        self.globals = globals
 
 
     def build_cfg(self):
-        cfg: ControlFlowGraph = ControlFlowGraphBuilder.build([self.function_def] + self.function_def.body)
+        global_names = list(self.globals.keys()) if self.globals else []
+        cfg: ControlFlowGraph = ControlFlowGraphBuilder.build([self.function_def] + self.function_def.body, global_names)
         self.type_map = ExtractTypeVisitor.extract(self.function_def)
         cfg.name = self.function_def.name
 
@@ -217,7 +220,7 @@ class DataflowBuilder:
                 assert isinstance(rawblock, nodes.Bool), type(rawblock)
                 node = IfNode(repr(rawblock.value))
             else:
-                block = LocalBlock(list(statement_block), self.name, block_num, op_name)
+                block = LocalBlock(list(statement_block), self.name, block_num, op_name, self.globals)
                 block_num += 1
                 node = block.to_node()
                 df.add_block(block.compile())

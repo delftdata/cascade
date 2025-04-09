@@ -45,12 +45,12 @@ class MovieId:
         self.movie_id = movie_id
 
     def upload_movie(self, review: ComposeReview, rating: int):
-        # if self.movie_id is not None:
-        #     review.upload_movie_id(self.movie_id)
-        # else:
-        #     review.upload_rating(rating)
-        movie_id = self.movie_id
-        review.upload_movie_id(movie_id)
+        cond = self.movie_id is not None
+        if cond:
+            movie_id = self.movie_id
+            review.upload_movie_id(movie_id)
+        else:
+            review.upload_rating(rating)
 
 @cascade
 class Frontend():
@@ -66,18 +66,19 @@ class Frontend():
         # uuid = UniqueId.generate()
         # review.upload_unique_id(uuid)
         
-@cascade
+
+class Uuid:
+    @staticmethod
+    def gen_uuid():
+        return uuid.uuid1().int >> 64
+
+@cascade(globals={'Uuid': Uuid})
 class UniqueId():
     @staticmethod
     def upload_unique_id_2(review: ComposeReview):
         # TODO: support external libraries
-        # review_id = uuid.uuid1().int >> 64
-        review_id = 424242
+        review_id = Uuid.gen_uuid()
         review.upload_unique_id(review_id)
-
-    @staticmethod
-    def generate() -> int:
-        return 424242
 
 @cascade
 class Text():

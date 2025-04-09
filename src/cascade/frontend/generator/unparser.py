@@ -20,9 +20,11 @@ def unparse(block: RawBasicBlock):
             return f'{repr(block.target)} {block.op}= {unparse(block.value)}'
         case nodes.Assign:
             target, *rest = block.targets
-            return f'{repr(target)} = {unparse(block.value)}'
+            return f'{unparse(target)} = {unparse(block.value)}'
         case nodes.Attribute:
             return f'{block.value}.{block.attr}'
+        case nodes.AssignName:
+            return repr(block)
         case nodes.Name:
             return repr(block)
         case nodes.BinOp:
@@ -31,8 +33,14 @@ def unparse(block: RawBasicBlock):
             return str(block)
         case nodes.Const:
             return str(block)
-        case nodes.Compare:
+        case nodes.NameConstant:
             return str(block)
+        case nodes.Compare:
+            res = unparse(block.left)
+            for op, operand in zip(block.ops, block.comparators):
+                res += " {} {}".format(op, unparse(operand))
+            return res
+        
         case nodes.Bool:
             return repr(block)
         case nodes.If:
@@ -40,5 +48,9 @@ def unparse(block: RawBasicBlock):
             raise NotImplementedError(type(block), "Should have been removed in previous CFG pass")
         case nodes.FunctionDef:
             return str(block).replace('"', "'")
+        case nodes.Call:
+            return "{}{}".format(str(block.func), tuple(block.args))
+        case nodes.UnaryOp:
+            return "{}{}".format(str(block.op), unparse(block.operand))
         case _:
-            return str(block)
+            raise NotImplementedError(type(block))

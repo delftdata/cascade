@@ -34,6 +34,13 @@ def test_deathstar_movie_demo_python():
     exec(f'import deathstar_movie_review.entities.entities')
     cascade.core.init()
 
+    compose_df = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
+    df_parallel = parallelize(compose_df)
+    df_parallel.name = "compose_parallel"
+    cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
+    print(df_parallel.to_dot())
+    assert len(df_parallel.entry) == 4
+
     runtime, client = init_python_runtime()
     deathstar_movie_demo(client)
 
@@ -84,7 +91,7 @@ def deathstar_movie_demo(client):
     event = cascade.core.dataflows[DataflowRef("User", "__init__")].generate_event({"username": username, "user_data": user_data}, username)
     result = client.send(event, block=True)
     print(result)
-    assert result.username == username
+    assert result['username'] == username
 
     print("testing compose review")
     req_id = "4242"

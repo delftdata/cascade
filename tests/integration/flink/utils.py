@@ -24,7 +24,7 @@ def init_cascade_from_module(import_path: str):
     exec(f'import {import_path}')
     cascade.core.init()
 
-def init_flink_runtime(import_path: str, in_topic=None, out_topic=None, internal_topic=None, parallelism=None, **init_args) -> FlinkRuntime:
+def init_flink_runtime(import_path: str, in_topic=None, out_topic=None, internal_topic=None, parallelism=4, **init_args) -> FlinkRuntime:
     init_cascade_from_module(import_path)
 
     if in_topic is None:

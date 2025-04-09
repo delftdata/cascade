@@ -7,8 +7,9 @@ from cascade.frontend.ast_visitors import ContainsAttributeVisitor, VariableGett
 
 class ControlFlowGraphBuilder:
 
-    def __init__(self, block_list: list):
+    def __init__(self, block_list: list, globals: list[str]):
         self.block_list: list = block_list
+        self.globals = globals
 
     def make_cfg(self, blocks: list, i = 0) -> tuple[ControlFlowGraph, int]:
         graph = ControlFlowGraph()
@@ -51,7 +52,9 @@ class ControlFlowGraphBuilder:
                 statement.values = [v.__repr__() for v in values]
                 contains_attribute, attribute = ContainsAttributeVisitor.check_return_attribute(b)
                 if contains_attribute:
-                    if attribute.value.id != 'self':
+                    if attribute.value.id in self.globals:
+                        statement.values.remove(attribute.value.id)
+                    elif attribute.value.id != 'self':
                         statement.set_remote()
 
                     statement.set_attribute(attribute)
@@ -63,6 +66,6 @@ class ControlFlowGraphBuilder:
         return graph
     
     @classmethod
-    def build(cls, block_list: list) -> ControlFlowGraph:
-        dataflow_graph_builder = cls(block_list)
+    def build(cls, block_list: list, globals: list[str]) -> ControlFlowGraph:
+        dataflow_graph_builder = cls(block_list, globals)
         return dataflow_graph_builder.construct_dataflow_graph()

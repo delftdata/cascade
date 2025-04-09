@@ -44,7 +44,7 @@ def _test_stateful_operator(client, collector):
     client.send(event)
 
     result = wait_for_event_id(event[0]._id, collector)
-    print(result.result.__dict__)
+    print(result.result)
 
     event = item_init.generate_event({"key": "fork", "price": 5}, key="fork")
     client.send(event)
@@ -53,7 +53,7 @@ def _test_stateful_operator(client, collector):
     client.send(event)
 
     result = wait_for_event_id(event[0]._id, collector)
-    print(result.result.__dict__)
+    print(result.result)
 
 
     print(user_buy_2.to_dot())

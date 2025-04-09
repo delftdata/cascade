@@ -26,29 +26,36 @@ registered_classes: list[ClassWrapper] = []
 operators: dict[str, Operator] = {}
 dataflows: dict[DataflowRef, DataFlow] = {}
 
-def cascade(cls, parse_file=True):
-    if not isclass(cls):
-        raise AttributeError(f"Expected a class but got an {cls}.")
+def cascade(cls=None, *, parse_file=True, globals=None):
 
-    # Parse source.
-    if parse_file:
-        class_file_name = getfile(cls)
-        if class_file_name not in parse_cache:
-            with open(class_file_name, "r") as file:
-                to_parse_file = file.read()
-                # parsed_cls = AstBuilder().string_build(to_parse_file)
-                parsed_cls, tree = setup_cfg(to_parse_file)
-                parse_cache[class_file_name] = (parsed_cls, tree)
+    def decorator(cls):
+        if not isclass(cls):
+            raise AttributeError(f"Expected a class but got an {cls}.")
+
+        # Parse source.
+        if parse_file:
+            class_file_name = getfile(cls)
+            if class_file_name not in parse_cache:
+                with open(class_file_name, "r") as file:
+                    to_parse_file = file.read()
+                    # parsed_cls = AstBuilder().string_build(to_parse_file)
+                    parsed_cls, tree = setup_cfg(to_parse_file)
+                    parse_cache[class_file_name] = (parsed_cls, tree)
+            else:
+                parsed_cls, tree = parse_cache[class_file_name]
         else:
-            parsed_cls, tree = parse_cache[class_file_name]
-    else:
-        class_source = getsource(cls)
-        parsed_cls, tree = setup_cfg(class_source)
+            class_source = getsource(cls)
+            parsed_cls, tree = setup_cfg(class_source)
 
-    # Create class descripter for class
-    class_desc: ClassDescriptor = ClassDescriptor.from_module(cls.__name__, tree)
-    class_wrapper: ClassWrapper = ClassWrapper(cls, class_desc)
-    registered_classes.append(class_wrapper)
+        # Create class descripter for class
+        class_desc: ClassDescriptor = ClassDescriptor.from_module(cls.__name__, tree, globals)
+        class_wrapper: ClassWrapper = ClassWrapper(cls, class_desc)
+        registered_classes.append(class_wrapper)
+
+    # Support both @cascade and @cascade(globals={...})
+    if cls is None:
+        return decorator
+    return decorator(cls)
 
 
 def init():
@@ -88,7 +95,7 @@ def init():
                 df.entry = [n0]
                 blocks = []
             else:
-                df = DataflowBuilder(method.method_node).build(dataflows, op_name)
+                df = DataflowBuilder(method.method_node, cls.class_desc.globals).build(dataflows, op_name)
             
             dataflows[df.ref()] = df
             op.dataflows[df.ref()] = df

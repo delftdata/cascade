@@ -1,5 +1,5 @@
 from textwrap import indent
-from typing import Any, Callable, Union, TYPE_CHECKING
+from typing import Any, Callable, Optional, Union, TYPE_CHECKING
 
 
 from cascade.frontend.cfg import Statement
@@ -45,7 +45,7 @@ def to_entity_call(statement: Statement, type_map: dict[str, str], dataflows: di
 
 
 class LocalBlock:
-    def __init__(self, statements: list[Statement], method_base_name: str, block_num: int, class_name: str):
+    def __init__(self, statements: list[Statement], method_base_name: str, block_num: int, class_name: str, globals: Optional[dict[str, Any]]=None):
         assert len(statements) > 0
         # A block of statements should have no remote calls 
         assert all([not s.is_remote() for s in statements])
@@ -77,13 +77,14 @@ class LocalBlock:
 
         self.reads: set[str] = reads
         self.writes: set[str] = writes
+        self.globals = globals
 
     def compile(self) -> 'CompiledLocalBlock':
         return CompiledLocalBlock(self)
     
     def compile_function(self) -> Callable:
         local_scope = {}
-        exec(self.to_string(), {}, local_scope)
+        exec(self.to_string(), self.globals, local_scope)
         method_name = self.get_method_name()
         return local_scope[method_name]
 
