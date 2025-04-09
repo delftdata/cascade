@@ -97,6 +97,21 @@ class RouterOperator(ProcessFunction):
             logger.debug(f"RouterOperator: Propogated {len(new_events)} new Events")
         
         yield from new_events
+
+def router_flat_map(event_result: tuple[Event, Any], dataflows: dict['DataflowRef', 'DataFlow']):
+    event, result = event_result
+    event = profile_event(event, "Router")
+
+    # logger.debug(f"RouterOperator Event entered: {event._id}")
+
+    new_events = list(event.propogate(result, dataflows))
+    
+    # if len(new_events) == 1 and isinstance(new_events[0], EventResult):
+    #     logger.debug(f"RouterOperator: Returned {new_events[0]}")
+    # else:
+    #     logger.debug(f"RouterOperator: Propogated {len(new_events)} new Events")
+    
+    return new_events
         
 
 class FlinkOperator(KeyedProcessFunction):
@@ -455,11 +470,11 @@ class FlinkRuntime():
         config.set_string("pipeline.jars",f"file://{flink_jar};file://{kafka_jar};file://{serializer_jar}")
 
         self.env = StreamExecutionEnvironment.get_execution_environment(config)
-        if not parallelism:
-            parallelism = min(self.env.get_parallelism(), 16)
-        self.env.set_parallelism(parallelism)
+        if parallelism:
+            self.env.set_parallelism(parallelism)
+        parallelism = self.env.get_parallelism()
 
-        logger.debug(f"FlinkRuntime: parallelism {parallelism}")
+        logger.info(f"FlinkRuntime: parallelism {parallelism}")
 
 
         deserialization_schema = ByteSerializer()
@@ -605,7 +620,7 @@ class FlinkRuntime():
                     .key_by(lambda e: e.key)
                     .process(flink_op)
                     .name("STATEFUL OP: " + flink_op.operator.name())
-                    .process(RouterOperator(self.dataflows)).name("ROUTER")
+                    # .process(RouterOperator(self.dataflows)).name("ROUTER")
             )
             self.stateful_op_streams.append(op_stream)
 
@@ -617,7 +632,7 @@ class FlinkRuntime():
                     .get_side_output(tag)
                     .process(flink_op)
                     .name("STATELESS OP: " + flink_op.operator.name())
-                    .process(RouterOperator(self.dataflows)).name("ROUTER")
+                    # .process(RouterOperator(self.dataflows)).name("ROUTER")
             )
             self.stateless_op_streams.append(op_stream)
 
@@ -639,14 +654,17 @@ class FlinkRuntime():
                 .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
                 .process(FlinkCollectOperator())
                 .name("Collect")
-                .process(RouterOperator(self.dataflows)).name("ROUTER")
+                # .process(RouterOperator(self.dataflows)).name("ROUTER")
         )
         """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 
-        # union with EventResults or Events that don't have a CollectNode target
-        ds = collect_stream.union(operator_streams)
+        # descriptor = ValueStateDescriptor("dataflows", Types.PICKLED_BYTE_ARRAY())
 
-        # ds = ds.process(RouterOperator(self.dataflows)).name("ROUTER")
+        # broadcast_dataflows = self.env.broadcast_variable("dataflows", list(self.dataflows.items()))
+        # union with EventResults or Events that don't have a CollectNode target
+        ds = collect_stream.union(operator_streams)#.flat_map(lambda x: router_flat_map(x, {u: v for u, v in self.dataflows.items()}))
+
+        ds = ds.process(RouterOperator(self.dataflows)).name("ROUTER")
 
         # Output the stream
         results = (
