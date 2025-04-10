@@ -20,8 +20,8 @@ class PythonStatefulOperator():
         print(f"PythonStatefulOperator[{self.operator.entity.__name__}[{key}]]: {event}")
 
         if isinstance(event.target.method, InitClass):
-            result = self.operator.handle_init_class(*event.variable_map.values())
-            self.states[key] = result.__dict__
+            result = self.operator.handle_init_class(*event.variable_map.values()).__dict__
+            self.states[key] = result
 
         elif isinstance(event.target.method, InvokeMethod):
             state = self.states[key]

@@ -7,7 +7,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src")))
 
 from cascade.dataflow.dataflow import DataflowRef
-from cascade.dataflow.optimization.parallelization import parallelize
+from cascade.dataflow.optimization.parallelization import parallelize_until_if
 from cascade.runtime.python_runtime import PythonClientSync, PythonRuntime
 import cascade
 
@@ -30,9 +30,12 @@ def test_parallelize():
     print(df)
     print(df.nodes)
 
-    df_parallel = parallelize(df)
+    print(df.to_dot())
+    df_parallel, _ = parallelize_until_if(df)
     df_parallel.name = "get_total_parallel"
     cascade.core.dataflows[DataflowRef("Test", "get_total_parallel")] = df_parallel
+
+    print(df_parallel.to_dot())
 
     assert len(df_parallel.entry) == 2
     assert len(df.entry) == 1

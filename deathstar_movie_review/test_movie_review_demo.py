@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"
 
 from cascade.runtime.flink_runtime import FlinkClientSync
 from cascade.dataflow.dataflow import DataflowRef
-from cascade.dataflow.optimization.parallelization import parallelize
+from cascade.dataflow.optimization.parallelization import parallelize_until_if
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from cascade.runtime.python_runtime import PythonClientSync, PythonRuntime
 
@@ -35,7 +35,7 @@ def test_deathstar_movie_demo_python():
     cascade.core.init()
 
     compose_df = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
-    df_parallel = parallelize(compose_df)
+    df_parallel, _ = parallelize_until_if(compose_df)
     df_parallel.name = "compose_parallel"
     cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
     print(df_parallel.to_dot())
@@ -54,7 +54,7 @@ def test_deathstar_movie_demo_flink():
 
     runtime = utils.init_flink_runtime("deathstar_movie_review.entities.entities")
     compose_df = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
-    df_parallel = parallelize(compose_df)
+    df_parallel, _ = parallelize_until_if(compose_df)
     df_parallel.name = "compose_parallel"
     cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
     runtime.add_dataflow(df_parallel)

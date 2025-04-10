@@ -51,8 +51,6 @@ class IfNode(Node):
     def propogate(self, event: 'Event', targets: List[Node], result: Any, df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
         
         if_cond = event.variable_map[self.predicate_var]
-        print(self.predicate_var)
-        print(if_cond)
         targets = []
         for edge in event.target.outgoing_edges:
             assert edge.if_conditional is not None
@@ -218,6 +216,7 @@ class DataFlow:
         self.name: str = name
         self.adjacency_list: dict[int, list[int]] = {}
         self.nodes: dict[int, Node] = {}
+        self.edges: list[Edge] = []
         self.entry: List[Node] = []
         self.operator_name = op_name
         if args:
@@ -228,17 +227,25 @@ class DataFlow:
 
     def ref(self) -> DataflowRef:
         return DataflowRef(self.operator_name, self.name)
-    # def get_operator(self) -> Operator:
-    #     return cascade.core.operators[self.op_name]
 
     def add_node(self, node: Node):
         """Add a node to the Dataflow graph if it doesn't already exist."""
         if node.id not in self.adjacency_list:
+            node.outgoing_edges = []
             self.adjacency_list[node.id] = []
             self.nodes[node.id] = node
 
     def add_block(self, block: 'CompiledLocalBlock'):
         self.blocks[block.get_method_name()] = block
+
+    def copy(self) -> 'DataFlow':
+        copy = DataFlow(self.name, self.operator_name, self.args)
+        for edge in self.edges:
+            copy.add_edge(edge)
+        copy.entry = self.entry
+        return copy
+    
+
 
     def add_edge(self, edge: Edge):
         """Add an edge to the Dataflow graph. Nodes that don't exist will be added to the graph automatically."""
@@ -247,6 +254,7 @@ class DataFlow:
         if edge.to_node.id not in self.adjacency_list[edge.from_node.id]:
             self.adjacency_list[edge.from_node.id].append(edge.to_node.id)
             edge.from_node.outgoing_edges.append(edge)
+            self.edges.append(edge)
 
     def add_edge_refs(self, u: int, v: int, if_conditional=None):
         """Add an edge using node IDs"""
@@ -264,6 +272,14 @@ class DataFlow:
                 edge for edge in from_node.outgoing_edges if edge.to_node.id != to_node.id
             ]
 
+            # TODO: replace self.edges with a better algorithm for removal. 
+            # probably by adding edge information (like edge.if_conditional, or future things)
+            # to self.adjacencylist
+            for i, edge in enumerate(self.edges):
+                if edge.from_node == from_node and edge.to_node == to_node:
+                    break
+            self.edges.pop(i)
+
     def remove_node(self, node: Node):
         """Remove a node from the DataFlow graph and reconnect its parents to its children."""
         if node.id not in self.nodes:
@@ -279,8 +295,8 @@ class DataFlow:
         # Set df entry
         if len(self.entry) == 1 and self.entry[0] == node:
             print(children)
-            assert len(children) == 1, "cannot remove entry node if it doesn't exactly one child"
-            self.entry = [self.nodes[children[0]]]
+            assert len(children) <= 1, "cannot remove entry node if it has more than two children"
+            self.entry = [self.nodes[id] for id in children]
 
         # Connect each parent to each child
         for parent_id in parents:
@@ -316,7 +332,7 @@ class DataFlow:
 
     def to_dot(self) -> str:
         """Output the DataFlow graph in DOT (Graphviz) format."""
-        lines = [f"digraph {self.operator_name}.{self.name} {{"]
+        lines = [f"digraph {self.operator_name}_{self.name} {{"]
 
         # Add nodes
         for node in self.nodes.values():

@@ -19,7 +19,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"
 
 from tests.integration.flink.utils import init_cascade_from_module, init_flink_runtime
 import cascade
-from cascade.dataflow.optimization.parallelization import parallelize
+from cascade.dataflow.optimization.parallelization import parallelize_until_if
 from cascade.dataflow.dataflow import DataflowRef,EventResult
 from cascade.runtime.flink_runtime import FlinkClientSync
 
@@ -219,7 +219,7 @@ def main():
     init_client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
 
     df_baseline = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
-    df_parallel = parallelize(df_baseline)
+    df_parallel, _ = parallelize_until_if(df_baseline)
     df_parallel.name = "compose_parallel"
     cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
     print(cascade.core.dataflows.keys())

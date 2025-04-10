@@ -181,8 +181,8 @@ other ideas:
 """
 
 from dataclasses import dataclass
-from typing import Any
-from cascade.dataflow.dataflow import CallEntity, CallLocal, CollectNode, DataFlow, Edge, Node
+from typing import Any, Tuple
+from cascade.dataflow.dataflow import CallEntity, CallLocal, CollectNode, DataFlow, Edge, IfNode, Node
 import cascade
 
 @dataclass
@@ -193,7 +193,9 @@ class AnnotatedNode:
     
 
 import networkx as nx
-def parallelize(df: DataFlow):    
+def parallelize_until_if(df: DataFlow) -> Tuple[DataFlow, DataFlow]:  
+    """Parallelize df, stopping at the first if node.
+    The first dataflow is the parallelized dataflow up until the first if node. The second dataflow is the rest of the dataflow"""  
     # create the dependency graph
     ans = []
     # since we use SSA, every variable has exactly one node that writes it
@@ -208,6 +210,8 @@ def parallelize(df: DataFlow):
             method = df.blocks[node.method.method_name]
             reads = method.reads
             writes = method.writes
+        elif isinstance(node, IfNode):
+            break
         else:
             raise ValueError(f"unsupported node type: {type(node)}")
         
@@ -217,7 +221,7 @@ def parallelize(df: DataFlow):
         graph.add_node(node.id)
 
     nodes_with_indegree_0 = set(graph.nodes)
-    n_map = df.nodes
+    n_map = df.nodes.copy()
     for node in ans:
         for read in node.reads:
             if read in write_nodes:
@@ -234,12 +238,15 @@ def parallelize(df: DataFlow):
     updated.entry = [n_map[node_id] for node_id in nodes_with_indegree_0]
     prev_node = None
 
+    rest = df.copy()
+
     while len(nodes_with_indegree_0) > 0:
         # remove nodes from graph
-        children = []
+        children = set()
         for node_id in nodes_with_indegree_0:
-            children.extend(graph.successors(node_id))
+            children.update(graph.successors(node_id))
             graph.remove_node(node_id)
+            rest.remove_node(n_map[node_id])
             updated.add_node(n_map[node_id])
             
 
@@ -250,9 +257,6 @@ def parallelize(df: DataFlow):
                 next_nodes.add(child)
         
         if len(nodes_with_indegree_0) > 1:
-            # TODO: maybe collect node should just infer from it's predecessors?
-            # like it can only have DataFlowNode predecessors
-            # TODO: rename DataflowNode to EntityCall
             collect_node = CollectNode(len(nodes_with_indegree_0))
             for node_id in nodes_with_indegree_0:
                 if prev_node:
@@ -268,4 +272,4 @@ def parallelize(df: DataFlow):
 
         nodes_with_indegree_0 = next_nodes
 
-    return updated
+    return updated, rest
