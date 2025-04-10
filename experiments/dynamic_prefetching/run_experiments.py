@@ -4,8 +4,12 @@ import time
 
 # Define experiment parameters as a list of dictionaries
 experiments = [
-    {"parallelism": 4, "benchmark_args": {"requests_per_second": 10000, "seconds": 30, "threads": 20, "experiment": "baseline", "chance": 0.99}},
-    {"parallelism": 4, "benchmark_args": {"requests_per_second": 10000, "seconds": 30, "threads": 20, "experiment": "prefetch", "chance": 0.99}},
+    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "baseline", "chance": 0.9}},
+    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "prefetch", "chance": 0.9}},
+    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "baseline", "chance": 0.5}},
+    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "prefetch", "chance": 0.5}},
+    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "baseline", "chance": 0.1}},
+    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "prefetch", "chance": 0.1}},
 ]
 
 

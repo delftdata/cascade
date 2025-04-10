@@ -294,7 +294,6 @@ class DataFlow:
         
         # Set df entry
         if len(self.entry) == 1 and self.entry[0] == node:
-            print(children)
             assert len(children) <= 1, "cannot remove entry node if it has more than two children"
             self.entry = [self.nodes[id] for id in children]
 

@@ -74,3 +74,11 @@ services:
         FLINK_PROPERTIES=
         jobmanager.rpc.address: jobmanager
         taskmanager.numberOfTaskSlots: ${TASK_SLOTS:-16}
+
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: "8G"
+    mem_limit: 8G
+    cpus: "4"

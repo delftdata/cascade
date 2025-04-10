@@ -52,5 +52,7 @@ def unparse(block: RawBasicBlock):
             return "{}{}".format(str(block.func), tuple(block.args))
         case nodes.UnaryOp:
             return "{}{}".format(str(block.op), unparse(block.operand))
+        case nodes.Expr:
+            return unparse(block.value)
         case _:
-            raise NotImplementedError(type(block))
+            raise NotImplementedError(f"{type(block)}: {block}")

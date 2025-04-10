@@ -24,7 +24,21 @@ IN_TOPIC = "prefetcher-in"
 OUT_TOPIC = "prefetcher-out"
 INTERNAL_TOPIC = "prefetcher-internal"
 
+def gen_parallel(df):
+    par, rest = parallelize_until_if(df)
 
+    # join the two dataflows
+    par_exit = [node.id for node in par.nodes.values() if len(node.outgoing_edges) == 0]
+    for edge in rest.edges:
+        par.add_edge(edge)
+    assert len(rest.entry) == 1
+    assert len(par_exit) == 1
+    par.add_edge_refs(par_exit[0], rest.entry[0].id, None)
+
+
+    print(par.to_dot())
+    par.name = df.name + "_parallel"
+    return par
 
 def main():
     init_cascade_from_module("experiments.dynamic_prefetching.entities")
@@ -40,22 +54,15 @@ def main():
     baseline = cascade.core.dataflows[DataflowRef("Prefetcher", "baseline")]
     prefetch = cascade.core.dataflows[DataflowRef("Prefetcher", "prefetch")]
 
-    print(baseline.to_dot())
 
-    par, rest = parallelize_until_if(prefetch)
+    pre_par = gen_parallel(prefetch)
+    cascade.core.dataflows[DataflowRef("Prefetcher", "prefetch_parallel")] = pre_par
 
-    # join the two dataflows
-    par_exit = [node.id for node in par.nodes.values() if len(node.outgoing_edges) == 0]
-    for edge in rest.edges:
-        par.add_edge(edge)
-    assert len(rest.entry) == 1
-    assert len(par_exit) == 1
-    par.add_edge_refs(par_exit[0], rest.entry[0].id, None)
+    base_par = gen_parallel(baseline)
+    cascade.core.dataflows[DataflowRef("Prefetcher", "baseline_parallel")] = base_par
 
-
-    print(par.to_dot())
-    par.name = "prefetch_parallel"
-    cascade.core.dataflows[DataflowRef("Prefetcher", "prefetch_parallel")] = par
+    print(base_par.to_dot())
+    print(pre_par.to_dot())
 
     run_test()
 
@@ -76,7 +83,7 @@ def wait_for_futures(client: FlinkClientSync):
     return futures
 
 def generate_event(exp: Literal["baseline", "prefetch"], chance: float):
-    baseline = cascade.core.dataflows[DataflowRef("Prefetcher", "baseline")]
+    baseline = cascade.core.dataflows[DataflowRef("Prefetcher", "baseline_parallel")]
     prefetch = cascade.core.dataflows[DataflowRef("Prefetcher", "prefetch_parallel")]
     df = prefetch if exp == "prefetch" else baseline
 
@@ -145,7 +152,8 @@ def run_test():
 
     count = Counter([r["ret"].result for r in results.values()])
     print(count)
-    to_pandas(results)
+    df = to_pandas(results)
+    df.to_csv(f"{args.experiment}_{args.chance}_{args.requests_per_second}.csv")
         
 
 
@@ -156,13 +164,8 @@ def to_pandas(futures_dict):
         ret: EventResult = event_data.get("ret")
         row = {
             "event_id": event_id,
-            "sent": str(event_data.get("sent")),
-            "sent_t": event_data.get("sent_t"),
-            "ret": str(event_data.get("ret")),
-            "ret_t": event_data.get("ret_t"),
-            "roundtrip": ret.metadata["roundtrip"] if ret else None,
+            "result": ret.result if ret else None,
             "flink_time": ret.metadata["flink_time"] if ret else None,
-            "deser_times": ret.metadata["deser_times"] if ret else None,
             "loops": ret.metadata["loops"] if ret else None,
             "latency": event_data["ret_t"][1] - event_data["sent_t"][1] if ret else None
         }
@@ -178,6 +181,10 @@ def to_pandas(futures_dict):
     flink_prct = float(flink_time) * 100 / latency
     print(f"Median latency    : {latency:.2f} ms")
     print(f"Median Flink time : {flink_time:.2f} ms ({flink_prct:.2f}%)")
+
+    latency = df['latency'].mean()
+    print(f"Mean latency    : {latency:.2f} ms")
+
 
     return df
 

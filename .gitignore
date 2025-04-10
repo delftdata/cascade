@@ -11,3 +11,4 @@ build
 # Experiment artifacts
 *.png
 *.pkl
+*.csv
