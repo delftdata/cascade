@@ -40,7 +40,6 @@ def unparse(block: RawBasicBlock):
             for op, operand in zip(block.ops, block.comparators):
                 res += " {} {}".format(op, unparse(operand))
             return res
-        
         case nodes.Bool:
             return repr(block)
         case nodes.If:
@@ -54,5 +53,10 @@ def unparse(block: RawBasicBlock):
             return "{}{}".format(str(block.op), unparse(block.operand))
         case nodes.Expr:
             return unparse(block.value)
+        case nodes.BoolOp:
+            res = unparse(block.values[0])
+            for v in block.values[1:]:
+                res += " {} {}".format(block.op, unparse(v))
+            return res
         case _:
             raise NotImplementedError(f"{type(block)}: {block}")

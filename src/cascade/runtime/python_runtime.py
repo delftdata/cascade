@@ -66,7 +66,7 @@ class PythonCollectOperator():
         self.state = {}
 
     def process(self, event: Event):
-        key = event.target.id
+        key = event._id
         if key not in self.state:
             self.state[key] = [event]
         else:
