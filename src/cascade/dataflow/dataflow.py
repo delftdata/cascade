@@ -91,7 +91,7 @@ class DataflowRef:
         
 
 @dataclass
-class CallEntity(Node):
+class CallRemote(Node):
     """A node in a `DataFlow` corresponding to the call of another dataflow"""
     dataflow: 'DataflowRef'
     """The dataflow to call."""
@@ -116,10 +116,10 @@ class CallEntity(Node):
         new_targets = df.entry
 
         # Tail call elimination:
-        # "targets" corresponds to where to go after this CallEntity finishes
+        # "targets" corresponds to where to go after this CallRemote finishes
         # the call to self.dataflow
         #
-        # If this CallEntity is a terminal node in event.dataflow, then we don't
+        # If this CallRemote is a terminal node in event.dataflow, then we don't
         # need to go back to event.dataflow, so we don't add it to the call stack.
         # This node is terminal in event.dataflow iff len(targets) == 0
         if len(targets) > 0:
@@ -185,7 +185,6 @@ class Edge():
     """An Edge in the Dataflow graph."""
     from_node: Node
     to_node: Node
-    variable_map: dict[str, Any] = field(default_factory=dict)
     if_conditional: Optional[bool] = None
 
 class DataFlow:
@@ -238,14 +237,6 @@ class DataFlow:
     def add_block(self, block: 'CompiledLocalBlock'):
         self.blocks[block.get_method_name()] = block
 
-    def copy(self) -> 'DataFlow':
-        copy = DataFlow(self.name, self.operator_name, self.args)
-        for edge in self.edges:
-            copy.add_edge(edge)
-        copy.entry = self.entry
-        return copy
-    
-
 
     def add_edge(self, edge: Edge):
         """Add an edge to the Dataflow graph. Nodes that don't exist will be added to the graph automatically."""
@@ -281,19 +272,22 @@ class DataFlow:
             self.edges.pop(i)
 
     def remove_node(self, node: Node):
+        return self.remove_node_by_id(node.id)
+
+    def remove_node_by_id(self, node_id: int):
         """Remove a node from the DataFlow graph and reconnect its parents to its children."""
-        if node.id not in self.nodes:
+        if node_id not in self.nodes:
             return  # Node doesn't exist in the graph
 
 
         # Find parents (nodes that have edges pointing to this node)
-        parents = [parent_id for parent_id, children in self.adjacency_list.items() if node.id in children]
+        parents = [parent_id for parent_id, children in self.adjacency_list.items() if node_id in children]
 
         # Find children (nodes that this node points to)
-        children = self.adjacency_list[node.id]
+        children = self.adjacency_list[node_id]
         
         # Set df entry
-        if len(self.entry) == 1 and self.entry[0] == node:
+        if len(self.entry) == 1 and self.entry[0].id == node_id:
             assert len(children) <= 1, "cannot remove entry node if it has more than two children"
             self.entry = [self.nodes[id] for id in children]
 
@@ -308,16 +302,16 @@ class DataFlow:
         # Remove edges from parents to the node
         for parent_id in parents:
             parent_node = self.nodes[parent_id]
-            self.remove_edge(parent_node, node)
+            self.remove_edge(parent_node, self.nodes[node_id])
 
         # Remove outgoing edges from the node
         for child_id in children:
             child_node = self.nodes[child_id]
-            self.remove_edge(node, child_node)
+            self.remove_edge(self.nodes[node_id], child_node)
         
         # Remove the node from the adjacency list and nodes dictionary
-        del self.adjacency_list[node.id]
-        del self.nodes[node.id]
+        del self.adjacency_list[node_id]
+        del self.nodes[node_id]
 
 
     def get_neighbors(self, node: Node) -> List[Node]:
@@ -338,14 +332,12 @@ class DataFlow:
             lines.append(f'    {node.id} [label="{node}"];')
 
         # Add edges
-        for node in self.nodes.values():
-            for edge in node.outgoing_edges:
-
-                line = f"    {edge.from_node.id} -> {edge.to_node.id}"
-                if edge.if_conditional is not None:
-                    line += f' [label="{edge.if_conditional}"]'
-                line += ";"
-                lines.append(line)
+        for edge in self.edges:
+            line = f"    {edge.from_node.id} -> {edge.to_node.id}"
+            if edge.if_conditional is not None:
+                line += f' [label="{edge.if_conditional}"]'
+            line += ";"
+            lines.append(line)
 
         lines.append("}")
         return "\n".join(lines)
@@ -360,7 +352,7 @@ class DataFlow:
             # TODO: propogate at "compile time" instead of doing this every time
             local_events = []
             for ev in events:
-                if isinstance(ev.target, CallEntity) or isinstance(ev.target, IfNode):
+                if isinstance(ev.target, CallRemote) or isinstance(ev.target, IfNode):
                     local_events.extend(ev.propogate(None, cascade.core.dataflows))
                 else:
                     local_events.append(ev)
@@ -428,7 +420,7 @@ class Event():
         
         events = []
 
-        if len(targets) == 0 and not isinstance(self.target, CallEntity):
+        if len(targets) == 0 and not isinstance(self.target, CallRemote):
             if len(self.call_stack) > 0:
                 caller = self.call_stack.pop()
 
@@ -460,8 +452,8 @@ class Event():
             events = current_node.propogate(self, targets, result, df_map)
 
         for event in events:
-            if isinstance(event.target, CallEntity) or isinstance(event.target, IfNode):
-                # recursively propogate CallEntity events
+            if isinstance(event.target, CallRemote) or isinstance(event.target, IfNode):
+                # recursively propogate CallRemote events
                 yield from event.propogate(None, df_map)
             else:
                 yield event

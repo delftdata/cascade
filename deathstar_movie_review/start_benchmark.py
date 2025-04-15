@@ -192,7 +192,6 @@ def write_dict_to_pkl(futures_dict, filename):
     # Multiply flink_time by 1000 to convert to milliseconds
     df['flink_time'] = df['flink_time'] * 1000
 
-    df.to_pickle(filename)
     return df
 
 def main():
@@ -219,11 +218,17 @@ def main():
     init_client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
 
     df_baseline = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
+    print(df_baseline.to_dot())
     df_parallel, _ = parallelize_until_if(df_baseline)
     df_parallel.name = "compose_parallel"
     cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
     print(cascade.core.dataflows.keys())
-     
+
+    for df in cascade.core.dataflows.values():
+        print(df.to_dot())
+        for block in df.blocks.values():
+            print(block.function_string)
+                    
     if not args.no_init:
         print("Populating...")
         populate_user(init_client)
@@ -261,6 +266,51 @@ def main():
     print(f"Median latency    : {latency:.2f} ms")
     print(f"Median Flink time : {flink_time:.2f} ms ({flink_prct:.2f}%)")
     init_client.close()
+
+    df = preprocess(args.output, df)
+    df.to_pickle(args.output)
+    
+
+import re
+
+def preprocess(name, df, warmup_time_s=3) -> pd.DataFrame:
+    # Extract parallelism and mps from the name using regex
+    match = re.search(r'(.+)_p-(\d+)_rps-(\d+)', name)
+    if match:
+        experiment = match.group(1)
+        parallelism = int(match.group(2))
+        mps = int(match.group(3))
+    else:
+        raise Exception()
+    
+    # Ignore the first warmup_time seconds of events
+    warmup_events = int(warmup_time_s * mps)
+    df = df.iloc[warmup_events:]
+
+    # Calculate the additional Kafka overhead
+    # df['kafka_overhead'] = df['latency'] - df['flink_time']
+
+    # Extract median values from df
+    flink_time_median = df['flink_time'].median()
+    latency_median = df['latency'].median()
+    flink_time_99_percentile = df['flink_time'].quantile(0.99)
+    latency_99_percentile = df['latency'].quantile(0.99)
+    flink_time_95_percentile = df['flink_time'].quantile(0.95)
+    latency_95_percentile = df['latency'].quantile(0.95)
+
+    data = {
+        'experiment': experiment,
+        'parallelism': parallelism,
+        'mps': mps,
+        'flink_time_median': flink_time_median,
+        'latency_median': latency_median,
+        'latency_99_percentile': latency_99_percentile,
+        'latency_95_percentile': latency_95_percentile,
+        'flink_time_99_percentile': flink_time_99_percentile,
+        'flink_time_95_percentile': flink_time_95_percentile
+    }
+    data = {k:[v] for k,v in data.items()} 
+    return pd.DataFrame(data)
 
 if __name__ == "__main__":
     main()

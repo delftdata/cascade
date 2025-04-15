@@ -2,7 +2,7 @@ from typing import Literal
 import cascade
 from cascade.dataflow.dataflow import DataflowRef
 from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
-from cascade.dataflow.optimization.parallelization import parallelize
+from cascade.dataflow.optimization.parallelization import parallelize_until_if
 from cascade.runtime.flink_runtime import FlinkRuntime
 from tests.integration.flink.utils import create_topics, init_flink_runtime
 
@@ -26,7 +26,7 @@ def main():
     print(f"Creating dataflow [{EXPERIMENT}]")
 
     df_baseline = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
-    df_parallel = parallelize(df_baseline)
+    df_parallel, _ = parallelize_until_if(df_baseline)
     df_parallel.name = "compose_parallel"
     cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
     runtime.add_dataflow(df_parallel)

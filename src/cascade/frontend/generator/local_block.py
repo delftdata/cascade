@@ -5,7 +5,7 @@ from typing import Any, Callable, Optional, Union, TYPE_CHECKING
 from cascade.frontend.cfg import Statement
 from cascade.frontend.ast_visitors.replace_name import ReplaceSelfWithState
 from cascade.frontend.generator.unparser import unparse
-from cascade.dataflow.dataflow import CallEntity, CallLocal, DataFlow, DataflowRef, InvokeMethod
+from cascade.dataflow.dataflow import CallRemote, CallLocal, DataFlow, DataflowRef, InvokeMethod
 
 from klara.core.cfg import RawBasicBlock
 from klara.core import nodes
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from cascade.dataflow.operator import MethodCall, StatelessMethodCall
 
 
-def to_entity_call(statement: Statement, type_map: dict[str, str], dataflows: dict[DataflowRef, DataFlow]) -> CallEntity:
+def to_entity_call(statement: Statement, type_map: dict[str, str], dataflows: dict[DataflowRef, DataFlow]) -> CallRemote:
     """Transform a remote statement to an entity call."""
     writes = statement.targets
     assert statement.is_remote()
@@ -41,7 +41,7 @@ def to_entity_call(statement: Statement, type_map: dict[str, str], dataflows: di
     args.remove(operator_var)
     df_args = dataflows[dataflow].args
 
-    return CallEntity(dataflow, {a: b for a, b in zip(df_args, args, strict=True)}, assign_result_to=assign,keyby=key)
+    return CallRemote(dataflow, {a: b for a, b in zip(df_args, args, strict=True)}, assign_result_to=assign,keyby=key)
 
 
 class LocalBlock:

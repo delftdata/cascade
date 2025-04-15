@@ -8,7 +8,11 @@ __pycache__
 *.egg-info
 build
 
+.vscode/
+
 # Experiment artifacts
 *.png
 *.pkl
 *.csv
+nohup.out
+*.zip

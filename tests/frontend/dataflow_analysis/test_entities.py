@@ -5,7 +5,7 @@ from textwrap import dedent
 from klara.core.cfg import Cfg
 from klara.core import nodes
 
-from cascade.dataflow.dataflow import CallEntity, CallLocal, DataFlow, DataflowRef
+from cascade.dataflow.dataflow import CallRemote, CallLocal, DataFlow, DataflowRef
 
 from cascade.frontend.generator.dataflow_builder import DataflowBuilder
 from cascade.frontend.util import setup_cfg
@@ -37,11 +37,11 @@ def test_call_entity():
     assert len(df.nodes) == 3
     assert len(df.entry) == 1
     entry = df.entry[0]
-    assert isinstance(entry, CallEntity)
+    assert isinstance(entry, CallRemote)
     next = df.get_neighbors(entry)
     assert len(next) == 1
     next = next[0]
-    assert isinstance(next, CallEntity)
+    assert isinstance(next, CallRemote)
     next = df.get_neighbors(next)
     assert len(next) == 1
     next = next[0]
