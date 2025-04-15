@@ -20,25 +20,25 @@ def test_checkout_item():
 
     event = item_init.generate_event({"item_name": "fork", "price": 10}, key="fork")
     result = client.send(event)
-    assert result.price == 10
-    assert result.item_name == "fork"
+    assert result["price"] == 10
+    assert result["item_name"] == "fork"
 
     event = item_init.generate_event({"item_name": "spoon", "price": 20}, key="spoon")
     result = client.send(event)
-    assert result.price == 20
-    assert result.__key__() == "spoon"
+    assert result["price"] == 20
+    assert result["item_name"] == "spoon"
 
     event = user_init.generate_event({"username": "test", "balance": 15}, key="test")
     user = client.send(event)
-    assert user.balance == 15
-    assert user.__key__() == "test"
+    assert user["balance"] == 15
+    assert user["username"] == "test"
 
-    event = user_buy_item.generate_event({"item_0": "fork"}, key=user.__key__())
+    event = user_buy_item.generate_event({"item_0": "fork"}, key=user["username"] )
     result = client.send(event)
     assert runtime.statefuloperators["User"].states["test"]["balance"] == 5
     assert result 
 
-    event = user_buy_item.generate_event({"item_0": "spoon"}, key=user.__key__())
+    event = user_buy_item.generate_event({"item_0": "spoon"}, key=user["username"] )
     result = client.send(event)
     assert runtime.statefuloperators["User"].states["test"]["balance"] == -15
     assert not result 
@@ -59,15 +59,15 @@ def test_operator_chaining():
     
     event = a_init.generate_event({"key": "aaa"}, key="aaa")
     result = client.send(event)
-    assert result.key == "aaa"
+    assert result["key"] == "aaa"
 
     event = b_init.generate_event({"key": "bbb"}, key="bbb")
     result = client.send(event)
-    assert result.key == "bbb"
+    assert result["key"] == "bbb"
 
     event = c_init.generate_event({"key": "ccc"}, key="ccc")
     result = client.send(event)
-    assert result.key == "ccc"
+    assert result["key"] == "ccc"
 
     event = c_get.generate_event({"y_0": 0}, key="ccc")
     result = client.send(event)
