@@ -83,7 +83,7 @@ class Compiler:
         methods = {}
         for f in split_functions:
             f_name = f.name
-            methods[f_name] = eval(f_name)
+            methods[f_name] = eval(f)
         
         return StatefulOperator(entity, methods, {})
 
