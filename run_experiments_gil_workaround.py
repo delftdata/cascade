@@ -17,7 +17,11 @@ experiments = [
     {"parallelism": 24, "benchmark_args": {**rps(1500, producer_threads=20)}},
     {"parallelism": 24, "benchmark_args": {**rps(2000, producer_threads=20)}},
     {"parallelism": 24, "benchmark_args": {**rps(2500, producer_threads=20)}},
-    {"parallelism": 24, "benchmark_args": {**rps(3000, producer_threads=20)}},
+    {"parallelism": 24, "benchmark_args": {**rps(250, producer_threads=10)}},
+    {"parallelism": 24, "benchmark_args": {**rps(750, producer_threads=10)}},
+    {"parallelism": 24, "benchmark_args": {**rps(1250, producer_threads=10)}},
+    {"parallelism": 24, "benchmark_args": {**rps(1750, producer_threads=25)}},
+    {"parallelism": 24, "benchmark_args": {**rps(2250, producer_threads=25)}},
 ]
 
 

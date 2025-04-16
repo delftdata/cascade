@@ -52,10 +52,9 @@ class FlinkRegisterKeyNode(Node):
 
 class FanOutOperator(ProcessFunction):
     """"""
-    def __init__(self, stateful_ops: dict[str, OutputTag], stateless_ops: dict[str, OutputTag], collect_tag: OutputTag) -> None:
+    def __init__(self, stateful_ops: dict[str, OutputTag], stateless_ops: dict[str, OutputTag]) -> None:
         self.stateful_ops = stateful_ops
         self.stateless_ops = stateless_ops
-        self.collect_tag = collect_tag
 
     def process_element(self, event: Event, ctx: ProcessFunction.Context):
         event = profile_event(event, "FanOut")
@@ -68,9 +67,6 @@ class FanOutOperator(ProcessFunction):
             else:
                 tag = self.stateless_ops[event.dataflow.operator_name]
 
-        elif isinstance(event.target, CollectNode):
-            tag = self.collect_tag
-
         else:
             logger.error(f"FanOut: Wrong target: {event}")
             return
@@ -79,9 +75,17 @@ class FanOutOperator(ProcessFunction):
         yield tag, event
 
 class RouterOperator(ProcessFunction):
-    """"""
-    def __init__(self, dataflows: dict['DataflowRef', 'DataFlow']) -> None:
+    """Takes in an Event and Result as tuple. Calls Event.propogate on the event.
+
+    The main output contains Events to be reingested into the system.
+    There are two side outputs:
+        - one for Events with a CollectNode target
+        - one for EventResults
+    """
+    def __init__(self, dataflows: dict['DataflowRef', 'DataFlow'], collect_tag: OutputTag, out_tag: OutputTag) -> None:
         self.dataflows = dataflows
+        self.collect_tag = collect_tag
+        self.out_tag = out_tag
 
     def process_element(self, event_result: tuple[Event, Any], ctx: ProcessFunction.Context):
         event, result = event_result
@@ -96,23 +100,15 @@ class RouterOperator(ProcessFunction):
         else:
             logger.debug(f"RouterOperator: Propogated {len(new_events)} new Events")
         
-        yield from new_events
-
-def router_flat_map(event_result: tuple[Event, Any], dataflows: dict['DataflowRef', 'DataFlow']):
-    event, result = event_result
-    event = profile_event(event, "Router")
-
-    # logger.debug(f"RouterOperator Event entered: {event._id}")
-
-    new_events = list(event.propogate(result, dataflows))
-    
-    # if len(new_events) == 1 and isinstance(new_events[0], EventResult):
-    #     logger.debug(f"RouterOperator: Returned {new_events[0]}")
-    # else:
-    #     logger.debug(f"RouterOperator: Propogated {len(new_events)} new Events")
-    
-    return new_events
-        
+        for event in new_events:
+            if isinstance(event, Event):
+                if isinstance(event.target, CollectNode):
+                    yield self.collect_tag, event
+                else:
+                    yield event
+            else:
+                assert isinstance(event, EventResult)
+                yield self.out_tag, event
 
 class FlinkOperator(KeyedProcessFunction):
     """Wraps an `cascade.dataflow.datflow.StatefulOperator` in a KeyedProcessFunction so that it can run in Flink.
@@ -606,9 +602,10 @@ class FlinkRuntime():
         stateful_tags = { op.operator.name() : OutputTag(op.operator.name()) for op in self.stateful_operators}
         stateless_tags = { op.operator.name() : OutputTag(op.operator.name()) for op in self.stateless_operators}
         collect_tag = OutputTag("__COLLECT__")
+        result_tag = OutputTag("__EVENT_RESULT__")
         logger.debug(f"Stateful tags: {stateful_tags.items()}")
         logger.debug(f"Stateless tags: {stateless_tags.items()}")
-        fanout = self.event_stream.process(FanOutOperator(stateful_tags, stateless_tags, collect_tag)).name("FANOUT OPERATOR")#.disable_chaining()
+        fanout = self.event_stream.process(FanOutOperator(stateful_tags, stateless_tags)).name("FANOUT OPERATOR")#.disable_chaining()
 
         # create the streams
         self.stateful_op_streams = []
@@ -620,7 +617,6 @@ class FlinkRuntime():
                     .key_by(lambda e: e.key)
                     .process(flink_op)
                     .name("STATEFUL OP: " + flink_op.operator.name())
-                    # .process(RouterOperator(self.dataflows)).name("ROUTER")
             )
             self.stateful_op_streams.append(op_stream)
 
@@ -632,7 +628,6 @@ class FlinkRuntime():
                     .get_side_output(tag)
                     .process(flink_op)
                     .name("STATELESS OP: " + flink_op.operator.name())
-                    # .process(RouterOperator(self.dataflows)).name("ROUTER")
             )
             self.stateless_op_streams.append(op_stream)
 
@@ -648,13 +643,16 @@ class FlinkRuntime():
         else:
             raise RuntimeError("No operators found, were they added to the flink runtime with .add_*_operator()")
 
+
+        op_routed = operator_streams.process(RouterOperator(self.dataflows, collect_tag, result_tag)).name("ROUTER (OP)")
+
         collect_stream = (
-            fanout
+            op_routed
                 .get_side_output(collect_tag)
                 .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
                 .process(FlinkCollectOperator())
                 .name("Collect")
-                # .process(RouterOperator(self.dataflows)).name("ROUTER")
+                .process(RouterOperator(self.dataflows, collect_tag, result_tag))
         )
         """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 
@@ -662,14 +660,12 @@ class FlinkRuntime():
 
         # broadcast_dataflows = self.env.broadcast_variable("dataflows", list(self.dataflows.items()))
         # union with EventResults or Events that don't have a CollectNode target
-        ds = collect_stream.union(operator_streams)#.flat_map(lambda x: router_flat_map(x, {u: v for u, v in self.dataflows.items()}))
 
-        ds = ds.process(RouterOperator(self.dataflows)).name("ROUTER")
 
         # Output the stream
         results = (
-            ds
-                .filter(lambda e: isinstance(e, EventResult))
+            op_routed.get_side_output(result_tag).union(collect_stream.get_side_output(result_tag))
+                # .filter(lambda e: isinstance(e, EventResult))
                 # .map(lambda e: profile_event(e, "EXTERNAL SINK"))
                 .map(lambda e: timestamp_result(e))
         )
@@ -683,8 +679,8 @@ class FlinkRuntime():
             raise ValueError(f"Invalid output: {output}")
 
         ds_internal = (
-            ds
-                .filter(lambda e: isinstance(e, Event))
+            op_routed.union(collect_stream)
+                # .filter(lambda e: isinstance(e, Event))
                 # .map(lambda e: profile_event(e, "INTERNAL SINK"))
                 .map(lambda e: timestamp_event(e))
                 .sink_to(self.kafka_internal_sink)

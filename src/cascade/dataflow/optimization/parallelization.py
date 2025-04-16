@@ -39,6 +39,8 @@ def parallelize_until_if(df: DataFlow) -> Tuple[DataFlow, DataFlow]:
         ans.append(AnnotatedNode(node, reads, writes))
         graph.add_node(node.id)
 
+    # Add the edges in the dependency graph
+    # & generate the set of indegree 0 nodes
     nodes_with_indegree_0 = set(graph.nodes)
     n_map = copy.deepcopy(df.nodes)
     for node in ans:

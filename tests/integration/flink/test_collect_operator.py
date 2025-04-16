@@ -25,7 +25,7 @@ def test_collect_operator():
 
     user_buy_2 = cascade.core.dataflows[DataflowRef("User", "buy_2_items")]
 
-    df_parallel = parallelize(user_buy_2)
+    df_parallel, _ = parallelize_until_if(user_buy_2)
     df_parallel.name = "buy_2_parallel"
     cascade.core.dataflows[DataflowRef("User", "buy_2_parallel")] = df_parallel
     print(df_parallel.to_dot())
