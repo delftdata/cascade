@@ -71,6 +71,9 @@ class IfNode(Node):
             
             events.append(ev)
         return events
+    
+    def __str__(self) -> str:
+        return f"IF {self.predicate_var}"
 
 @dataclass
 class DataflowRef:
@@ -122,9 +125,11 @@ class CallRemote(Node):
         # If this CallRemote is a terminal node in event.dataflow, then we don't
         # need to go back to event.dataflow, so we don't add it to the call stack.
         # This node is terminal in event.dataflow iff len(targets) == 0
+        new_call_stack = event.call_stack
         if len(targets) > 0:
+            new_call_stack = event.call_stack.copy()
             call = CallStackItem(event.dataflow, self.assign_result_to, event.variable_map, targets, key=event.key)
-            event.call_stack.append(call)
+            new_call_stack.append(call)
 
         return [Event(
                     target,
@@ -132,10 +137,13 @@ class CallRemote(Node):
                     self.dataflow,
                     _id=event._id,
                     metadata=event.metadata,
-                    call_stack=event.call_stack,
+                    call_stack=new_call_stack,
                     key=new_key)
                     
                     for target in new_targets]
+    
+    def __str__(self) -> str:
+        return f"CALL {self.dataflow}"
 
 
 @dataclass
@@ -159,6 +167,9 @@ class CallLocal(Node):
             events.append(ev)
         return events
 
+    def __str__(self) -> str:
+        return f"LOCAL {self.method}"
+
 @dataclass
 class CollectNode(Node):
     """A node in a `Dataflow` corresponding to a merge operator. 
@@ -179,6 +190,9 @@ class CollectNode(Node):
                     key=event.key)
                     
                     for target in targets]
+    
+    def __str__(self) -> str:
+        return f"COLLECT {self.num_events}"
 
 @dataclass
 class Edge():
@@ -329,7 +343,7 @@ class DataFlow:
 
         # Add nodes
         for node in self.nodes.values():
-            lines.append(f'    {node.id} [label="{node}"];')
+            lines.append(f'    {node.id} [label="{str(node)}"];')
 
         # Add edges
         for edge in self.edges:

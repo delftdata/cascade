@@ -15,7 +15,7 @@ IN_TOPIC = "ds-movie-in"
 OUT_TOPIC = "ds-movie-out"
 INTERNAL_TOPIC = "ds-movie-internal"
 
-EXPERIMENT: Literal["baseline", "pipelined", "parallel"] = os.getenv("EXPERIMENT", "baseline")
+EXPERIMENT: Literal["baseline", "parallel"] = os.getenv("EXPERIMENT", "baseline")
 
 
 def main():
@@ -25,10 +25,18 @@ def main():
        
     print(f"Creating dataflow [{EXPERIMENT}]")
 
+    # for parallel experiment
     df_baseline = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
     df_parallel, _ = parallelize_until_if(df_baseline)
     df_parallel.name = "compose_parallel"
     cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
+    runtime.add_dataflow(df_parallel)
+
+    # for prefetch experiment
+    df_baseline = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch")]
+    df_parallel, _ = parallelize_until_if(df_baseline)
+    df_parallel.name = "upload_movie_prefetch_parallel"
+    cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch_parallel")] = df_parallel
     runtime.add_dataflow(df_parallel)
 
     print(cascade.core.dataflows.keys())

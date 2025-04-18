@@ -45,12 +45,32 @@ class MovieId:
         self.movie_id = movie_id
 
     def upload_movie(self, review: ComposeReview, rating: int):
-        cond = self.movie_id is not None
+        cond = rating is not None
         if cond:
+            review.upload_rating(rating)
             movie_id = self.movie_id
             review.upload_movie_id(movie_id)
+            return True
         else:
-            review.upload_rating(rating)
+            movie_id = self.movie_id
+            review.upload_movie_id(movie_id)
+            return False
+
+        # if without else isn't invented yet, otherwise this would be 
+        # cond = rating is not None
+        # if cond:
+        #     review.upload_rating(rating)
+        # movie_id = self.movie_id
+        # review.upload_movie_id(movie_id)
+
+    def upload_movie_prefetch(self, review: ComposeReview, rating: int):
+        cond = rating is not None
+        movie_id = self.movie_id
+
+        review.upload_rating(rating)
+        review.upload_movie_id(movie_id)
+        return cond
+        
 
 @cascade
 class Frontend():

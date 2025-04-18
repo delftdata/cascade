@@ -19,7 +19,7 @@ from confluent_kafka import Producer, Consumer
 import logging
 
 logger = logging.getLogger("cascade")
-logger.setLevel("INFO")
+logger.setLevel("DEBUG")
 console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
@@ -91,7 +91,7 @@ class RouterOperator(ProcessFunction):
         event, result = event_result
         event = profile_event(event, "Router")
 
-        logger.debug(f"RouterOperator Event entered: {event._id}")
+        logger.debug(f"RouterOperator Event entered: {event}")
 
         new_events = list(event.propogate(result, self.dataflows))
         
@@ -99,6 +99,8 @@ class RouterOperator(ProcessFunction):
             logger.debug(f"RouterOperator: Returned {new_events[0]}")
         else:
             logger.debug(f"RouterOperator: Propogated {len(new_events)} new Events")
+            for i, event in enumerate(new_events):
+                logger.debug(f"{event} {i+1}/{len(new_events)}")
         
         for event in new_events:
             if isinstance(event, Event):
@@ -649,7 +651,7 @@ class FlinkRuntime():
         collect_stream = (
             op_routed
                 .get_side_output(collect_tag)
-                .key_by(lambda e: e._id) # might not work in the future if we have multiple merges in one dataflow?
+                .key_by(lambda e: str(e._id) + "_" + str(e.target.id)) # might not work in the future if we have multiple merges in one dataflow?
                 .process(FlinkCollectOperator())
                 .name("Collect")
                 .process(RouterOperator(self.dataflows, collect_tag, result_tag))

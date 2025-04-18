@@ -1,7 +1,8 @@
+from collections import Counter
 import hashlib
 from multiprocessing import Pool
 import time
-from typing import Literal
+from typing import Literal, Optional
 import uuid
 import pandas as pd
 import random
@@ -32,28 +33,10 @@ OUT_TOPIC = "ds-movie-out"
 # seconds_per_burst = 1
 # bursts = 100
 
-def populate_user(client: FlinkClientSync):
-    user_init = cascade.core.dataflows[DataflowRef("User", "__init__")]
+def populate_compose_review(client: FlinkClientSync):
+    cr_init = cascade.core.dataflows[DataflowRef("ComposeReview", "__init__")]
     for i in range(1000):
-        user_id = f'user{i}'
-        username = f'username_{i}'
-        password = f'password_{i}'
-        hasher = hashlib.new('sha512')
-        salt = uuid.uuid1().bytes
-        hasher.update(password.encode())
-        hasher.update(salt)
-
-        password_hash = hasher.hexdigest()
-
-        user_data = {
-            "userId": user_id,
-            "FirstName": "firstname",
-            "LastName": "lastname",
-            "Username": username,
-            "Password": password_hash,
-            "Salt": salt
-        }
-        event = user_init.generate_event({"username": username, "user_data": user_data}, key=username)
+        event = cr_init.generate_event({"req_id": str(i)}, key=str(i))
         client.send(event)
 
 
@@ -78,41 +61,38 @@ def populate_movie(client: FlinkClientSync):
         client.send(event)
 
 
-def compose_review(req_id, parallel=False):
-    user_index = random.randint(0, 999)
-    username = f"username_{user_index}"
-    password = f"password_{user_index}"
+def upload_movie(rating_chance: float, prefetch=False):
+    assert 0 <= rating_chance <= 1
+
+    if random.random() < rating_chance:
+        rating = random.randint(0, 10)
+    else: 
+        rating = None
     title = random.choice(movie_titles)
-    rating = None
-    # rating = random.randint(0, 10)
-    text = ''.join(random.choice(charset) for _ in range(256))
+    req_id = random.randint(0, 999)
     
-    if parallel:
-        compose = cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")]
+    if prefetch:
+        movie_id = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch_parallel")]
     else:
-        compose = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
+        movie_id = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie")]
 
-    return compose.generate_event({
-            "req_id": req_id, # hacky way to create the compose review object when it doesn't exist
-            "review_0": req_id,
-            "user_0": username,
-            "title_0": title,
-            "rating_0": rating,
-            "text_0": text
-        })
+    return movie_id.generate_event({
+            "review_0": str(req_id),
+            "rating_0": rating
+        }, key=title)
 
-def deathstar_workload_generator(parallel=False):
+def deathstar_workload_generator(rating_chance: float, prefetch=False):
     c = 1
     while True:
-        yield compose_review(c, parallel)
+        yield upload_movie(rating_chance, prefetch)
         c += 1
 
 
 def benchmark_runner(args) -> dict[int, dict]:
-    proc_num, requests_per_second, sleep_time, bursts, parallel = args
+    proc_num, requests_per_second, sleep_time, bursts, prefetch, rating_chance = args
     print(f'Generator: {proc_num} starting')
     client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
-    deathstar_generator = deathstar_workload_generator(parallel)
+    deathstar_generator = deathstar_workload_generator(rating_chance, prefetch)
     start = timer()
     
     for b in range(bursts):
@@ -202,6 +182,7 @@ def main():
     parser.add_argument("--seconds", type=int, default=100, help="Number of seconds to benchmark for")
     parser.add_argument("--threads", type=int, default=1, help="Number of concurrent threads")
     parser.add_argument("--experiment", type=str, default="baseline", help="Experiment type")
+    parser.add_argument("--branch_chance", type=float, default=0.5, help="Brance chance")
     parser.add_argument("--no_init", action="store_true", help="Don't populate")
     args = parser.parse_args()
     
@@ -218,12 +199,11 @@ def main():
 
     init_client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
 
-    df_baseline = cascade.core.dataflows[DataflowRef("Frontend", "compose")]
-    print(df_baseline.to_dot())
+    # for prefetch experiment
+    df_baseline = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch")]
     df_parallel, _ = parallelize_until_if(df_baseline)
-    df_parallel.name = "compose_parallel"
-    cascade.core.dataflows[DataflowRef("Frontend", "compose_parallel")] = df_parallel
-    print(cascade.core.dataflows.keys())
+    df_parallel.name = "upload_movie_prefetch_parallel"
+    cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch_parallel")] = df_parallel
 
     for df in cascade.core.dataflows.values():
         print(df.to_dot())
@@ -232,7 +212,7 @@ def main():
                     
     if not args.no_init:
         print("Populating...")
-        populate_user(init_client)
+        populate_compose_review(init_client)
         populate_movie(init_client)
         init_client.producer.flush()
         wait_for_futures(init_client)
@@ -240,9 +220,9 @@ def main():
         time.sleep(1)
 
     print("Starting benchmark")
-    parallel = args.experiment == "parallel"
+    prefetch = args.experiment == "prefetch"
 
-    func_args = [(t, rps_per_thread, sleep_time, args.seconds, parallel) for t in range(args.threads)]
+    func_args = [(t, rps_per_thread, sleep_time, args.seconds, prefetch, args.branch_chance) for t in range(args.threads)]
     with Pool(args.threads) as p:
         results = p.map(benchmark_runner, func_args)
 
@@ -258,6 +238,9 @@ def main():
 
     print(f"{r}/{t} results recieved.")
     print(f"Writing results to {args.output}")
+
+    count = Counter([r["ret"].result for r in results.values()])
+    print(count)
 
     df = write_dict_to_pkl(results, args.output)
 
