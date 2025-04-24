@@ -7,8 +7,8 @@ from klara.core import nodes
 def setup_cfg(code: str, preprocess=True) -> tuple[Cfg, nodes.Module]:
     as_tree = AstBuilder().string_build(code)
     cfg = Cfg(as_tree)
-    cfg.convert_to_ssa()
     if preprocess:
+        cfg.convert_to_ssa()
         ReplaceSelfWithState.replace(as_tree)
         simplify_returns(as_tree)
     # TODO: do this in preprocessing
