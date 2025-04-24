@@ -2,8 +2,9 @@
 from typing import Any, Optional
 from klara.core import nodes
 
-from cascade.frontend.ast_visitors import ExtractClassDefNode, ExtractMethodVisitor
 from cascade.descriptors.method_descriptor import MethodDescriptor
+from cascade.frontend.ast_visitors.extract_class_def_node import ExtractClassDefNode
+from cascade.frontend.ast_visitors.extract_class_methods import ExtractMethodVisitor
 
 class ClassDescriptor:
     """A description of a class."""

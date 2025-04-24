@@ -3,15 +3,15 @@ from klara.core.ssa_visitors import AstVisitor
 from klara.core import nodes
 
 class ReplaceSelfWithState(AstVisitor):
-    """Replace attributes with "self" into "state", and remove SSA versioning.
+    """Replace attributes with "self" into "__state", and remove SSA versioning.
 
     e.g.:
-    self_0.balance_0 -> state.balance
+    self_0.balance_0 -> __state['balance']
     """
 
     def __init__(self):
         self.target: str = "self"
-        self.new: str = "state"
+        self.new: str = "__state"
 
     @classmethod
     def replace(cls, node):

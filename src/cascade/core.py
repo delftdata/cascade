@@ -2,21 +2,14 @@ from inspect import isclass, getsource, getfile
 from typing import Dict
 
 from klara.core import nodes
-from klara.core.tree_rewriter import AstBuilder
-from klara.core.cfg import Cfg
 
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator, Operator
+from cascade.preprocessing import setup_cfg
 from cascade.wrappers import ClassWrapper
 from cascade.descriptors import ClassDescriptor
 from cascade.frontend.generator.dataflow_builder import  DataflowBuilder
 from cascade.dataflow.dataflow import CallLocal, DataFlow, DataflowRef, InitClass 
 
-
-def setup_cfg(code: str) -> Cfg:
-        as_tree = AstBuilder().string_build(code)
-        cfg = Cfg(as_tree)
-        cfg.convert_to_ssa()
-        return cfg, as_tree
 
 
 parse_cache: Dict[str, nodes.Module] = {}

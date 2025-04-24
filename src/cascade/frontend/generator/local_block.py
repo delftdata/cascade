@@ -3,7 +3,7 @@ from typing import Any, Callable, Optional, Union, TYPE_CHECKING
 
 
 from cascade.frontend.cfg import Statement
-from cascade.frontend.ast_visitors.replace_name import ReplaceSelfWithState
+# from cascade.frontend.ast_visitors.replace_name import ReplaceSelfWithState
 from cascade.frontend.generator.unparser import unparse
 from cascade.dataflow.dataflow import CallRemote, CallLocal, DataFlow, DataflowRef, InvokeMethod
 
@@ -102,14 +102,14 @@ class LocalBlock:
         return compiled_method_as_string
 
     def get_method_signature(self) -> str:
-        return f'variable_map, state'  
+        return f'variable_map, __state'  
 
     def body_to_string(self) -> str:
         body = []
 
         # Read from the variable map
         for v in sorted(self.reads - self.writes):
-            if not (v in [ 'self_0','self']):
+            if v != "__state":
                 body.append(f'{v} = variable_map[\'{v}\']')
 
         # Write statements
@@ -118,8 +118,8 @@ class LocalBlock:
             if type(block) == nodes.FunctionDef:
                 continue
 
-            # TODO: do this in preprocessing
-            ReplaceSelfWithState.replace(block)
+            # # TODO: do this in preprocessing
+            # ReplaceSelfWithState.replace(block)
             
             body.append(unparse(block))
 
@@ -128,7 +128,7 @@ class LocalBlock:
             for v in sorted(self.writes - self.reads):
                 if not (v in [ 'self_0','self']):
                     body.append(f'variable_map[\'{v}\'] = {v}')
-            body.append('return None')
+            # body.append('return None')
         return "\n".join(body)
     
 

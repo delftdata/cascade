@@ -232,3 +232,4 @@ def deathstar_prefetch(client):
     event = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch_parallel")].generate_event({"review_0": "100", "rating_0": 3}, "cars")
     result = client.send(event, block=True)
     print("movie uploaded w/ prefetch")
+    print(result)

@@ -2,7 +2,7 @@
 
 from pyflink.datastream.data_stream import CloseableIterator
 from cascade.dataflow.dataflow import DataflowRef
-from cascade.dataflow.optimization.parallelization import parallelize_until_if
+from cascade.dataflow.optimization.parallelization import parallelize, parallelize_until_if
 
 from cascade.runtime.flink_runtime import FlinkClientSync
 import tests.integration.flink.utils as utils
@@ -25,7 +25,7 @@ def test_collect_operator():
 
     user_buy_2 = cascade.core.dataflows[DataflowRef("User", "buy_2_items")]
 
-    df_parallel, _ = parallelize_until_if(user_buy_2)
+    df_parallel = parallelize(user_buy_2)
     df_parallel.name = "buy_2_parallel"
     cascade.core.dataflows[DataflowRef("User", "buy_2_parallel")] = df_parallel
     print(df_parallel.to_dot())

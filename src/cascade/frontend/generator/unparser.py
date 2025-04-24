@@ -57,6 +57,6 @@ def unparse(block: RawBasicBlock):
             res = unparse(block.values[0])
             for v in block.values[1:]:
                 res += " {} {}".format(block.op, unparse(v))
-            return res
+            return res  
         case _:
             raise NotImplementedError(f"{type(block)}: {block}")

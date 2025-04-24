@@ -1,8 +1,9 @@
 from typing import Any, Optional
 import networkx as nx
 
-from cascade.dataflow.dataflow import DataFlow, DataflowRef, IfNode
+from cascade.dataflow.dataflow import DataFlow, DataflowRef, IfNode, Return
 from cascade.frontend.ast_visitors.extract_type_visitor import ExtractTypeVisitor
+from cascade.frontend.ast_visitors.simplify_returns import SimplifyReturns
 from cascade.frontend.cfg.cfg_builder import ControlFlowGraphBuilder
 from cascade.frontend.cfg import Statement, ControlFlowGraph
 from cascade.frontend.generator.local_block import LocalBlock, to_entity_call
@@ -23,13 +24,13 @@ def split_statements_once(statements: list[Statement]) -> tuple[list[Statement],
     """     
     assert len(statements) > 0
 
-    if statements[0].is_remote():
+    if statements[0].is_remote() or statements[0].is_return():
         return [statements[0]], statements[1:]
     
     # find the next remote call
     i = 0
     first_half = []
-    while i < len(statements) and not statements[i].is_remote():
+    while i < len(statements) and not statements[i].is_remote() and not statements[i].is_return():
         first_half.append(statements[i])
         i += 1
 
@@ -219,6 +220,10 @@ class DataflowBuilder:
                 rawblock = statement_block[0].block
                 assert isinstance(rawblock, nodes.Bool), type(rawblock)
                 node = IfNode(repr(rawblock.value))
+            elif len(statement_block) == 1 and statement_block[0].is_return():
+                rawblock = statement_block[0].block
+                assert isinstance(rawblock.value, nodes.Name), f"Return values must be simple names, not {type(rawblock.value)}: {repr(rawblock.value)}"
+                node = Return(repr(rawblock.value))
             else:
                 block = LocalBlock(list(statement_block), self.name, block_num, op_name, self.globals)
                 block_num += 1

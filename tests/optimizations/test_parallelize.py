@@ -7,7 +7,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src")))
 
 from cascade.dataflow.dataflow import DataflowRef
-from cascade.dataflow.optimization.parallelization import parallelize_until_if
+from cascade.dataflow.optimization.parallelization import parallelize, parallelize_until_if
 from cascade.runtime.python_runtime import PythonClientSync, PythonRuntime
 import cascade
 
@@ -164,3 +164,51 @@ def test_code_motion():
 
 
 
+def test_a():
+    cascade.core.clear() # clear cascadeds registerd classes.
+    assert not cascade.core.registered_classes, "Registered classes should be empty before importing a Cascade \
+                                                    Module"
+    # import the module
+    import_module_name: str = 'deathstar_entities'
+    exec(f'import tests.optimizations.{import_module_name}')
+    
+    cascade.core.init()
+
+    prefetch = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch")]
+    compose_init = cascade.core.dataflows[DataflowRef("ComposeReview", "__init__")]
+    movie_init = cascade.core.dataflows[DataflowRef("MovieId", "__init__")]
+    
+    print(prefetch.to_dot())
+    prefetch_parallel = parallelize(prefetch)
+    print(prefetch_parallel.to_dot())
+    cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch_parallel")] = prefetch_parallel
+
+    compose_op = cascade.core.operators["ComposeReview"]
+    movie_op = cascade.core.operators["MovieId"]
+
+
+    runtime = PythonRuntime()
+    runtime.add_operator(compose_op)
+    runtime.add_operator(movie_op)
+    runtime.run()
+    client = PythonClientSync(runtime)
+
+
+
+    e = compose_init.generate_event({"req_id": "1"}, key="1")
+    r = client.send(e)
+    print(r)
+
+    e = movie_init.generate_event({"title": "cars", "movie_id": 1}, key="cars")
+    r = client.send(e)
+    print(r)
+
+    print("---")
+    e = prefetch.generate_event({"review_0": "1", "rating_0": 2}, key="cars")
+    r = client.send(e)
+    print(r)
+
+    print("---")
+    e = prefetch_parallel.generate_event({"review_0": "1", "rating_0": 2}, key="cars")
+    r = client.send(e)
+    print(r)

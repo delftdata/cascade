@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from klara.core.cfg import RawBasicBlock
 
-from klara.core.nodes import Attribute
+from klara.core.nodes import Attribute, Return
 
 @dataclass
 class Statement:
@@ -31,6 +31,9 @@ class Statement:
     
     def is_remote(self) -> bool:
         return self.remote_call
+    
+    def is_return(self) -> bool:
+        return isinstance(self.block, Return)
     
     def __hash__(self):
         return hash(self.block_num)

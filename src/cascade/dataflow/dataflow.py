@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import logging
 from typing import Any, Iterable, List, Mapping, Optional, Union
 from typing import TYPE_CHECKING
 import uuid
 
-import cascade
 
 if TYPE_CHECKING:
     from cascade.frontend.generator.local_block import CompiledLocalBlock
@@ -41,14 +41,35 @@ class Node(ABC):
         Node._id_counter += 1
 
     @abstractmethod
-    def propogate(self, event: 'Event', targets: list['Node'], result: Any, df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> list['Event']:
+    def propogate(self, event: 'Event', targets: list['Node'], df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> list['Event']:
         pass
 
 @dataclass
+class Return(Node):
+    return_var: str
+    """The name of the local variable to return."""
+
+    def propogate(self, event: 'Event', targets: List[Node], df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
+        events = []
+        for target in targets:
+            ev = Event(
+                target,
+                event.variable_map, 
+                event.dataflow,
+                call_stack=event.call_stack,
+                _id=event._id,
+                metadata=event.metadata,
+                key=event.key)
+            
+            events.append(ev)
+        return events
+        
+@dataclass
 class IfNode(Node):
     predicate_var: str
+    """The name of the local (boolean) variable to use as predicate."""
 
-    def propogate(self, event: 'Event', targets: List[Node], result: Any, df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
+    def propogate(self, event: 'Event', targets: List[Node], df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
         
         if_cond = event.variable_map[self.predicate_var]
         targets = []
@@ -108,7 +129,7 @@ class CallRemote(Node):
     keyby: Optional[str] = None
     """The key, for calls to Stateful Entities"""
 
-    def propogate(self, event: 'Event', targets: List[Node], result: Any, df_map: dict['DataflowRef', 'DataFlow']) -> List['Event']:
+    def propogate(self, event: 'Event', targets: List[Node], df_map: dict['DataflowRef', 'DataFlow']) -> List['Event']:
         # remap the variable map of event into the new event
         new_var_map = {key: event.variable_map[value] for key, value in self.variable_rename.items()}
         if self.keyby:
@@ -150,7 +171,7 @@ class CallRemote(Node):
 class CallLocal(Node):
     method: Union[InvokeMethod, InitClass]
 
-    def propogate(self, event: 'Event', targets: List[Node], result: Any, df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
+    def propogate(self, event: 'Event', targets: List[Node], df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
         # For simple calls, we only need to change the target.
         # Multiple targets results in multiple events
         events = []
@@ -178,7 +199,7 @@ class CollectNode(Node):
     Their actual implementation is runtime-dependent."""
     num_events: int
 
-    def propogate(self, event: 'Event', targets: List[Node], result: Any, df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
+    def propogate(self, event: 'Event', targets: List[Node], df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
         return [Event(
                     target,
                     event.variable_map, 
@@ -330,6 +351,11 @@ class DataFlow:
 
     def get_neighbors(self, node: Node) -> List[Node]:
         """Get the outgoing neighbors of this `Node`"""
+        return [edge.to_node for edge in node.outgoing_edges]
+        # TODO: there is a bug with the underlying adjacency_list: 
+        # it doesn't get updated properly sometimes (during parallelization), 
+        # but seemingly only when modifiying when running flink without minicluster
+        # mode. 
         return [self.nodes[id] for id in self.adjacency_list.get(node.id, [])]
 
     def get_predecessors(self, node: Node) -> List[Node]:
@@ -357,21 +383,22 @@ class DataFlow:
         return "\n".join(lines)
     
     def generate_event(self, variable_map: dict[str, Any], key: Optional[str] = None) -> list['Event']:
-            assert len(self.entry) != 0
-            # give all the events the same id
-            first_event = Event(self.entry[0], variable_map, self.ref(), key=key)
-            id = first_event._id
-            events = [first_event] + [Event(entry, variable_map, self.ref(), _id=id, key=key) for entry in self.entry[1:]] 
-            
-            # TODO: propogate at "compile time" instead of doing this every time
-            local_events = []
-            for ev in events:
-                if isinstance(ev.target, CallRemote) or isinstance(ev.target, IfNode):
-                    local_events.extend(ev.propogate(None, cascade.core.dataflows))
-                else:
-                    local_events.append(ev)
+        import cascade
+        assert len(self.entry) != 0
+        # give all the events the same id
+        first_event = Event(self.entry[0], variable_map, self.ref(), key=key)
+        id = first_event._id
+        events = [first_event] + [Event(entry, variable_map, self.ref(), _id=id, key=key) for entry in self.entry[1:]] 
+        
+        # TODO: propogate at "compile time" instead of doing this every time
+        local_events = []
+        for ev in events:
+            if isinstance(ev.target, CallRemote) or isinstance(ev.target, IfNode):
+                local_events.extend(ev.propogate(None, cascade.core.dataflows))
+            else:
+                local_events.append(ev)
 
-            return local_events
+        return local_events
 
        
     def __str__(self) -> str:
@@ -444,7 +471,8 @@ class Event():
                     new_targets = [new_targets]
                 var_map = caller.var_map
                 if (x := caller.assign_result_to):
-                    var_map[x] = result
+                    assert isinstance(self.target, Return), type(self.target)
+                    var_map[x] = self.variable_map[self.target.return_var]
 
                 for target in new_targets:
                     ev = Event(
@@ -456,17 +484,19 @@ class Event():
                         metadata=self.metadata,
                         key=caller.key
                     )
-                    events.append(ev)            
-
-            else:   
-                yield EventResult(self._id, result, self.metadata)
+                    events.append(ev)
+            else:
+                if isinstance(self.target, Return):
+                    yield EventResult(self._id, self.variable_map[self.target.return_var], self.metadata)
+                else:
+                    yield EventResult(self._id, result, self.metadata)
                 return
         else:
             current_node = self.target
-            events = current_node.propogate(self, targets, result, df_map)
+            events = current_node.propogate(self, targets, df_map)
 
         for event in events:
-            if isinstance(event.target, CallRemote) or isinstance(event.target, IfNode):
+            if isinstance(event.target, CallRemote) or isinstance(event.target, IfNode) or isinstance(event.target, Return):
                 # recursively propogate CallRemote events
                 yield from event.propogate(None, df_map)
             else:

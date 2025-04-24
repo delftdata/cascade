@@ -8,7 +8,7 @@ from klara.core import nodes
 from cascade.dataflow.dataflow import CallRemote, CallLocal, DataFlow, DataflowRef
 
 from cascade.frontend.generator.dataflow_builder import DataflowBuilder
-from cascade.frontend.util import setup_cfg
+from cascade.preprocessing import setup_cfg
 
 def test_call_entity():
     program: str = dedent("""
@@ -18,7 +18,7 @@ def test_call_entity():
             a = item1.get_quantity()
             b = item2.get_quantity()           
             return a+b""")
-    cfg: Cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
@@ -34,7 +34,7 @@ def test_call_entity():
     df = sf.build(dataflows, "Test")
 
     ## TODO: check blocks/df
-    assert len(df.nodes) == 3
+    assert len(df.nodes) == 4
     assert len(df.entry) == 1
     entry = df.entry[0]
     assert isinstance(entry, CallRemote)
@@ -54,7 +54,7 @@ def test_simple_block():
                           
         def add(x: int, y: int):          
             return x+y""")
-    cfg: Cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
@@ -68,7 +68,11 @@ def test_simple_block():
     df = sf.build(dataflows, "Test")
 
     assert len(df.blocks) == 1
-    assert list(df.blocks.values())[0].call_block({"x_0": 3, "y_0":5 }, None) == 8
+    block = list(df.blocks.values())[0]
+    print(block.function_string)
+    var_map = {"x_0": 3, "y_0":5 }
+    block.call_block(var_map, None)
+    assert sorted(list(var_map.values())) == [3, 5, 8]
 
 
 def test_state():
@@ -80,7 +84,7 @@ class User:
         return self.balance >= 0
 """)
 
-    cfg: Cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     user_class = blocks[2] 
     buy_item: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
@@ -119,7 +123,7 @@ class ComposeReview:
         self.review_data["review_id"] = review_id
 """)
 
-    cfg: Cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     user_class = blocks[2] 
     upload_unique: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
@@ -161,7 +165,7 @@ class Randomer:
         return r
 """)
 
-    cfg: Cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     user_class = blocks[2] 
     upload_unique: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
@@ -181,5 +185,12 @@ class Randomer:
     for block in df.blocks.values():
         print(block.function_string)
 
-    rands = {df.blocks['rand_0'].call_block(variable_map={}, state=None) for x in range(10)}
+    rands = set()
+    for _ in range(10):
+        var_map = {}
+        df.blocks['rand_0'].call_block(variable_map=var_map, __state=None)
+        assert len(var_map) == 1
+        r = var_map['r_0']
+        rands.add(r)
+
     assert len(rands) == 10

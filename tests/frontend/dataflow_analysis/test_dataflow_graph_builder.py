@@ -5,7 +5,7 @@ from klara.core import nodes
 
 from cascade.frontend.cfg.cfg_builder import ControlFlowGraphBuilder
 from cascade.frontend.cfg import Statement, ControlFlowGraph
-from cascade.frontend.util import setup_cfg
+from cascade.preprocessing import setup_cfg
 
 
 def test_linear_program():
@@ -18,7 +18,7 @@ def test_linear_program():
             total = Adder.add(q1, q2)
             return total""")
     
-    cfg: Cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class: nodes.Block = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
@@ -41,7 +41,7 @@ def test_ssa():
             total = Adder.add(item1.get_quantity(), item2.get_quantity())
             return total""")
     
-    cfg: Cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class: nodes.Block = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
@@ -67,7 +67,7 @@ def test_if_else_branches():
                 a = 0
             return a""")
     
-    cfg: Cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     print(blocks)
     test_class: nodes.Block = blocks[2] 

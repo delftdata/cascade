@@ -8,7 +8,7 @@ from klara.core import nodes
 from cascade.dataflow.dataflow import DataFlow, DataflowRef
 from cascade.frontend.generator.dataflow_builder import DataflowBuilder, blocked_cfg, split_cfg
 from cascade.frontend.cfg.control_flow_graph import ControlFlowGraph
-from cascade.frontend.util import setup_cfg
+from cascade.preprocessing import setup_cfg
 
 def test_entity_calls():
     program: str = dedent("""
@@ -23,7 +23,7 @@ def test_entity_calls():
             total = total + a + b
             total = total - 23            
             return total""")
-    cfg: Cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class: nodes.Block = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
@@ -46,7 +46,7 @@ def test_entity_calls():
         print(block.function_string)
 
     # TODO: Check # entity calls, # of local calls
-    assert len(df.nodes) == 5
+    assert len(df.nodes) == 6
     assert len(df.blocks) == 2
 
 def test_branching():
@@ -62,7 +62,7 @@ def test_branching():
                 orelser = 30
             post = 40
             return 50""")
-    cfg: Cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class: nodes.Block = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
@@ -87,7 +87,7 @@ def test_branching():
     print(df.to_dot())
     for block in df.blocks.values():
         print(block.function_string)
-    assert len(df.nodes) == 5
+    assert len(df.nodes) == 6
     assert len(df.blocks) == 4
 
 def print_digraph(graph: nx.DiGraph):
@@ -119,7 +119,7 @@ def test_branching_with_entity_calls():
                 x = 10
             post = 40
             return 50""")
-    cfg: Cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class: nodes.Block = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
@@ -130,8 +130,10 @@ def test_branching_with_entity_calls():
     new = blocked_cfg(sf.cfg.graph, sf.cfg.get_single_source())
 
     assert len(list(new.nodes)) == 5
+    print(new.nodes)
     new_split = split_cfg(new)
-    assert len(list(new_split.nodes)) == 7
+    print(new_split.nodes)
+    assert len(list(new_split.nodes)) == 8
     
     dataflows = {
         DataflowRef("Test", "test_branching"): DataFlow("test_branching", "Test", []),
@@ -146,7 +148,7 @@ def test_branching_with_entity_calls():
     for block in df.blocks.values():
         print(block.function_string)
 
-    assert len(df.nodes) == 7
+    assert len(df.nodes) == 8
     assert len(df.blocks) == 5
 
 def test_block_merging():

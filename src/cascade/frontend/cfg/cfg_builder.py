@@ -1,8 +1,9 @@
 from klara.core.cfg import  ModuleLabel, TempAssignBlock
 from klara.core import nodes
 
+from cascade.frontend.ast_visitors.contains_attribute_visitor import ContainsAttributeVisitor
+from cascade.frontend.ast_visitors.variable_getter import VariableGetter
 from cascade.frontend.cfg import Statement, ControlFlowGraph
-from cascade.frontend.ast_visitors import ContainsAttributeVisitor, VariableGetter
 
 
 class ControlFlowGraphBuilder:

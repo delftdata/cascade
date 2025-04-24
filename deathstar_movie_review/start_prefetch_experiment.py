@@ -129,13 +129,18 @@ def benchmark_runner(args) -> dict[int, dict]:
 def wait_for_futures(client: FlinkClientSync):   
     done = False
     while not done:
+        num_done = 0
         done = True
         for event_id, fut in client._futures.items():
             result = fut["ret"]
             if result is None:
                 done = False
-                time.sleep(0.5)
-                break
+            else:
+                num_done += 1
+
+        if not done:
+            print(f"{num_done}/{len(client._futures)}")
+            time.sleep(0.5)
     futures = client._futures
     return futures
 
@@ -174,8 +179,11 @@ def write_dict_to_pkl(futures_dict, filename):
     df['flink_time'] = df['flink_time'] * 1000
 
     return df
-
+import logging
 def main():
+    logger = logging.getLogger("cascade")
+    logger.setLevel("DEBUG")
+
     parser = argparse.ArgumentParser(description="Run the benchmark and save results.")
     parser.add_argument("-o", "--output", type=str, default="benchmark_results.pkl", help="Output file name for the results")
     parser.add_argument("--requests_per_second", type=int, default=10, help="Number of messages per burst")

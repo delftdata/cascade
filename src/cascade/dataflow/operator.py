@@ -124,7 +124,7 @@ class StatefulOperator(Generic[T], Operator):
 
         The state `T` is passed along to the function, and may be modified. 
         """
-        return self.methods[method.method_name].call_block(variable_map=variable_map, state=state)
+        return self.methods[method.method_name].call_block(variable_map=variable_map, __state=state)
             
     def get_method_rw_set(self, method_name: str):
         return super().get_method_rw_set(method_name)
@@ -152,7 +152,7 @@ class StatelessOperator(Operator):
 
         The state `T` is passed along to the function, and may be modified. 
         """
-        return self.methods[method.method_name].call_block(variable_map=variable_map, state=None)
+        return self.methods[method.method_name].call_block(variable_map=variable_map, __state=None)
     
     def get_method_rw_set(self, method_name: str):
         return super().get_method_rw_set(method_name)

@@ -2,7 +2,7 @@ from textwrap import dedent
 
 from cascade.dataflow.dataflow import DataFlow, DataflowRef, IfNode
 from cascade.frontend.generator.dataflow_builder import DataflowBuilder
-from cascade.frontend.util import setup_cfg
+from cascade.preprocessing import setup_cfg
 from klara.core import nodes
 
 
@@ -17,7 +17,7 @@ def test_easy_branching():
             else:
                 x = 10
             return self.balance""")
-    cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
@@ -32,7 +32,7 @@ def test_easy_branching():
 
     df = sf.build(dataflows, "User")
     print(df.to_dot())
-    assert len(df.nodes) == 6
+    assert len(df.nodes) == 7
     ifnode = None
     for node in df.nodes.values():
         if isinstance(node, IfNode):
@@ -53,7 +53,7 @@ def test_complex_predicate():
             else:
                 x = 10
             return self.balance""")
-    cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
@@ -85,7 +85,7 @@ def test_multiple_return():
                 item_price = item.get_price()
                 msg = str(item_price) + " is too expensive!"
                 return msg""")
-    cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
@@ -112,7 +112,7 @@ def test_no_else():
                 self.balance = self.balance - item_price
             x = 0
             return item_price""")
-    cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
@@ -149,7 +149,7 @@ def test_nested():
                 item_price = item.get_price()
                 msg = "item is too expensive!"
                 return msg""")
-    cfg = setup_cfg(program)
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]

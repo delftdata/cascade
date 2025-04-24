@@ -90,7 +90,8 @@ class Frontend():
 class Uuid:
     @staticmethod
     def gen_uuid():
-        return uuid.uuid1().int >> 64
+        x = uuid.uuid1().int >> 64
+        return x
 
 @cascade(globals={'Uuid': Uuid})
 class UniqueId():

@@ -6,16 +6,16 @@ def rps(num, branch_chance, producer_threads=1):
     return {
         "threads": producer_threads,
         "requests_per_second": num,
-        "seconds": 2,
+        "seconds": 50,
         "branch_chance": branch_chance
     }
 
 
 # Define experiment parameters as a list of dictionaries
 experiments = [
-    {"parallelism": 1, "benchmark_args": {**rps(1, 0.1, producer_threads=1)}},
-    {"parallelism": 1, "benchmark_args": {**rps(1, 0.5, producer_threads=1)}},
-    {"parallelism": 1, "benchmark_args": {**rps(1, 0.9, producer_threads=1)}},
+    {"parallelism": 4, "benchmark_args": {**rps(500, 0.1, producer_threads=10)}},
+    {"parallelism": 4, "benchmark_args": {**rps(500, 0.5, producer_threads=10)}},
+    {"parallelism": 4, "benchmark_args": {**rps(500, 0.9, producer_threads=10)}},
 ]
 
 
@@ -24,7 +24,7 @@ experiments = [
 print("Tearing down docker containers")
 subprocess.run(["docker", "compose", "down"], check=False)
 
-for e in ["prefetch"]:
+for e in ["baseline", "prefetch"]:
     for exp in experiments:
         print(f"Starting experiment {exp}")
         

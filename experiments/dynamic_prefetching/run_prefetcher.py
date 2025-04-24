@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../s
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 import cascade
-from cascade.dataflow.optimization.parallelization import parallelize_until_if
+from cascade.dataflow.optimization.parallelization import parallelize
 from cascade.runtime.flink_runtime import FlinkClientSync
 from cascade.dataflow.dataflow import DataFlow, DataflowRef, EventResult
 from tests.integration.flink.utils import create_topics, init_cascade_from_module, init_flink_runtime, wait_for_event_id
@@ -23,22 +23,6 @@ KAFKA_FLINK_BROKER = "kafka:9093" # If running a flink cluster and kafka inside 
 IN_TOPIC = "prefetcher-in"
 OUT_TOPIC = "prefetcher-out"
 INTERNAL_TOPIC = "prefetcher-internal"
-
-def gen_parallel(df):
-    par, rest = parallelize_until_if(df)
-
-    # join the two dataflows
-    par_exit = [node.id for node in par.nodes.values() if len(node.outgoing_edges) == 0]
-    for edge in rest.edges:
-        par.add_edge(edge)
-    assert len(rest.entry) == 1
-    assert len(par_exit) == 1
-    par.add_edge_refs(par_exit[0], rest.entry[0].id, None)
-
-
-    print(par.to_dot())
-    par.name = df.name + "_parallel"
-    return par
 
 def main():
     init_cascade_from_module("experiments.dynamic_prefetching.entities")
@@ -55,10 +39,10 @@ def main():
     prefetch = cascade.core.dataflows[DataflowRef("Prefetcher", "prefetch")]
 
 
-    pre_par = gen_parallel(prefetch)
+    pre_par = parallelize(prefetch)
     cascade.core.dataflows[DataflowRef("Prefetcher", "prefetch_parallel")] = pre_par
 
-    base_par = gen_parallel(baseline)
+    base_par = parallelize(baseline)
     cascade.core.dataflows[DataflowRef("Prefetcher", "baseline_parallel")] = base_par
 
     print(base_par.to_dot())
