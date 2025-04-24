@@ -1,9 +1,12 @@
+from typing import Any
 from klara.core.ssa_visitors import AstVisitor
 from klara.core import nodes
 
 def simplify_returns(node):
     sr = SimplifyReturns.replace(node)
-    for parent, n, target in sr.inserts:
+
+    # Add the new assign nodes to the parent after the ast visit is complete
+    for parent, n, target in sr.new_nodes:
         try:
             i = parent.body.index(n)
             parent.body.insert(i, target)
@@ -15,15 +18,19 @@ def simplify_returns(node):
                 raise e
 
 class SimplifyReturns(AstVisitor):
-    """Replace attributes with "self" into "state", and remove SSA versioning.
+    """Put return statments in ANF form.
 
-    e.g.:
-    self_0.balance_0 -> state.balance
+    Examples:
+
+    `return x+3`            ->  `__ret_0 = x + 3; return __ret_0`
+    `return self.balance`   ->  `__ret_1 = self.balance; return __ret_1`
+    `return cat`            ->  `return cat`
     """
        
     def __init__(self):
         self.temps = 0
-        self.inserts = []
+        # (return_node parent block, modified return_node, new assign_node)
+        self.new_nodes: list[tuple[Any, nodes.Return, nodes.Assign]] = []
 
     @classmethod
     def replace(cls, node):
@@ -41,8 +48,7 @@ class SimplifyReturns(AstVisitor):
         node.value.postinit(target.id)
         
         assert hasattr(node.parent, "body"), type(node.parent)
-        print(f"replacing {node} in {node.parent} with {new_assign}")
-        self.inserts.append((node.parent, node, new_assign))
+        self.new_nodes.append((node.parent, node, new_assign))
 
     def visit_return(self, node: nodes.Return):
 
