@@ -1,51 +1,81 @@
 from textwrap import dedent
 
-import networkx as nx 
-
 from klara.core.cfg import Cfg
 from klara.core import nodes
 
-from cascade.frontend.dataflow_analysis.dataflow_graph_builder import DataflowGraphBuilder
-from cascade.frontend.intermediate_representation import Statement, StatementDataflowGraph
-from cascade.frontend.util import setup_cfg
+from cascade.frontend.cfg.cfg_builder import ControlFlowGraphBuilder
+from cascade.frontend.cfg import Statement, ControlFlowGraph
+from cascade.preprocessing import setup_cfg
 
 
-def get_statment(df: StatementDataflowGraph, v: nodes.Statement):
-    return next(s for s in df.graph.nodes if s.block == v)
-
-
-def edge_exists_between(df: StatementDataflowGraph, v: nodes.Statement, n: nodes.Statement):
-    statement_v: Statement = get_statment(df, v)
-    statement_n: Statement = get_statment(df, n)
-    assert (statement_v, statement_n) in df.graph.edges
-
-def assert_expected_edges(df, expected_edges):
-    edges: list[nodes.Statement] = [(n.block, v.block) for n,v in df.graph.edges]
-    assert edges == expected_edges
-
-# TODO: FOr instance in the example below there is a indirect dependency between update balence and 
-# returning the balence >= 0. (side effect dependency)
-def test_simple_dataflow_graph():
+def test_linear_program():
     program: str = dedent("""
-                class User:
-                    
-                    def buy_item(self, item: 'Item') -> bool:
-                        item_price = item.get_price()
-                        self.balance -= item_price
-                        return self.balance >= 0
-                        """)
-    cfg: Cfg = setup_cfg(program)
+    class Test:
+                          
+        def get_total(item1: Stock, item2: Stock):
+            q1 = item1.get_quantity()
+            q2 = item2.get_quantity()
+            total = Adder.add(q1, q2)
+            return total""")
+    
+    cfg, _ = setup_cfg(program)
     blocks = cfg.block_list
-    user_class: nodes.Block = blocks[2] 
-    buy_item: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
-    buy_item_body_0 = buy_item.body[0]
-    buy_item_body_1 = buy_item.body[1]
-    buy_item_body_2 = buy_item.body[2]
-    df: StatementDataflowGraph = DataflowGraphBuilder.build([buy_item] + buy_item.body)
-    expected_edges = [
-        (buy_item, buy_item_body_0),
-        (buy_item, buy_item_body_1),
-        (buy_item, buy_item_body_2),
-        (buy_item_body_0, buy_item_body_1)
-    ]
-    assert_expected_edges(df, expected_edges)
+    test_class: nodes.Block = blocks[2] 
+    get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
+
+    # TODO: check that the produced ssa code made variables for 
+    #  - item1.get_quantity()
+    #  - item2.get_quantity()
+    df: ControlFlowGraph = ControlFlowGraphBuilder.build([get_total] + get_total.body, globals=[])
+    for n in df.graph.nodes:
+        print(n)
+    for u, v in df.graph.edges:
+        print(u.block_num, v.block_num)
+    # print(df.graph.edges)
+
+def test_ssa():
+    program: str = dedent("""
+    class Test:
+                          
+        def get_total(item1: Stock, item2: Stock):
+            total = Adder.add(item1.get_quantity(), item2.get_quantity())
+            return total""")
+    
+    cfg, _ = setup_cfg(program)
+    blocks = cfg.block_list
+    test_class: nodes.Block = blocks[2] 
+    get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
+
+    # TODO: check that the produced ssa code made variables for 
+    #  - item1.get_quantity()
+    #  - item2.get_quantity()
+    df: ControlFlowGraph = ControlFlowGraphBuilder.build([get_total] + get_total.body, globals=[])
+    print(df.graph.nodes)
+    print(df.graph.edges)
+
+
+def test_if_else_branches():
+    program: str = dedent("""
+    class Test:
+                          
+        def test_branches(item1: Stock, item2: Stock):
+            q = item1.get_quantity()
+            cond = q < 10
+            if cond:
+                a = item2.get_quantity()
+            else:
+                a = 0
+            return a""")
+    
+    cfg, _ = setup_cfg(program)
+    blocks = cfg.block_list
+    print(blocks)
+    test_class: nodes.Block = blocks[2] 
+    test: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
+
+    # TODO: check that the produced ssa code made variables for 
+    #  - item1.get_quantity()
+    #  - item2.get_quantity()
+    df: ControlFlowGraph = ControlFlowGraphBuilder.build([test] + test.body, globals=[])
+    # print(df.graph.nodes)
+    # print(df.graph.edges)

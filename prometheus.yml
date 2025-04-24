@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'flink-jobmanager'
+    static_configs:
+      - targets: ['jobmanager:9250']
+
+  - job_name: 'flink-taskmanagers'
+    dns_sd_configs:
+      - names: ['taskmanager']
+        type: A
+        port: 9250

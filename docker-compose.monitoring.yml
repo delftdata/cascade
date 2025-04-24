@@ -1,0 +1,114 @@
+version: '3.1'
+
+# https://docs.docker.com/guides/kafka/
+
+services:
+  kafka:
+    image: apache/kafka-native
+    ports:
+      - "9092:9092" # for HOST connections
+    expose:
+      - "9093" # for DOCKER connections
+    environment:
+      # Configure listeners for both docker and host communication
+      KAFKA_LISTENERS: CONTROLLER://localhost:9091,HOST://0.0.0.0:9092,DOCKER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,DOCKER://kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,DOCKER:PLAINTEXT,HOST:PLAINTEXT
+
+      # Settings required for KRaft mode
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9091
+      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
+
+      # Required for a single node cluster
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      # Low Latency Tuning
+      KAFKA_NUM_NETWORK_THREADS: 16
+      KAFKA_NUM_IO_THREADS: 32
+      KAFKA_LOG_FLUSH_INTERVAL_MESSAGES: 1000
+      KAFKA_LOG_FLUSH_INTERVAL_MS: 1000
+      KAFKA_SOCKET_SEND_BUFFER_BYTES: 1024000
+      KAFKA_SOCKET_RECEIVE_BUFFER_BYTES: 102400
+
+      # Change timestamp type for benchmark measurements
+      KAFKA_LOG_MESSAGE_TIMESTAMP_TYPE: LogAppendTime
+
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:latest
+    ports:
+      - 8080:8080
+    environment:
+      DYNAMIC_CONFIG_ENABLED: "true"
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
+    depends_on:
+      - kafka
+
+  # https://nightlies.apache.org/flink/flink-docs-release-1.20/docs/deployment/resource-providers/standalone/docker/#flink-with-docker-compose
+
+  jobmanager:
+    build:
+      context: .
+      dockerfile: Dockerfile.pyflink
+    ports:
+      - "8081:8081"
+    expose:
+      - "9250"  # Metrics port
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager   
+        metrics.reporter.prom.class: org.apache.flink.metrics.prometheus.PrometheusReporter
+        metrics.reporter.prom.port: 9250
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory     
+
+  taskmanager:
+    build:
+      context: .
+      dockerfile: Dockerfile.pyflink
+    expose:
+      - "9250"  # Metrics port
+    depends_on:
+      - jobmanager
+    command: taskmanager
+    scale: 1
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: ${TASK_SLOTS:-16}
+        metrics.reporter.prom.class: org.apache.flink.metrics.prometheus.PrometheusReporter
+        metrics.reporter.prom.port: 9250
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+
+
+  # Monitoring stack
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    depends_on:
+      - jobmanager
+      - taskmanager
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+
+volumes:
+  grafana-storage:

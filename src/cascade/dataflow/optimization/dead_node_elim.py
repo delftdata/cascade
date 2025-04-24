@@ -18,7 +18,10 @@ def is_no_op(func):
     return body in ("pass", "return")
 
 
+# DEPRECATED as dead nodes are not commonly generated.
+# However, some logic could be done for "flattening" calls in calls
 def dead_node_elimination(stateful_ops: list[StatefulOperator], stateless_ops: list[StatelessOperator]):
+    
     # Find dead functions
     dead_func_names = set()
     for op in stateful_ops:

@@ -268,7 +268,7 @@ bursts = 50
 def benchmark_runner(proc_num) -> dict[int, dict]:
     print(f'Generator: {proc_num} starting')
     client = FlinkClientSync("deathstar", "ds-out", "localhost:9092", True)
-    deathstar_generator = user_login_workload_generator()
+    deathstar_generator = deathstar_workload_generator()
     start = timer()
     
     for _ in range(bursts):

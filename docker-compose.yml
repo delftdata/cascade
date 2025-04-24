@@ -20,12 +20,18 @@ services:
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9091
-
-      # Listener to use for broker-to-broker communication
       KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
 
       # Required for a single node cluster
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      # Low Latency Tuning
+      KAFKA_NUM_NETWORK_THREADS: 8
+      KAFKA_NUM_IO_THREADS: 16
+      KAFKA_LOG_FLUSH_INTERVAL_MESSAGES: 1000
+      KAFKA_LOG_FLUSH_INTERVAL_MS: 1000
+      KAFKA_SOCKET_SEND_BUFFER_BYTES: 1024000
+      KAFKA_SOCKET_RECEIVE_BUFFER_BYTES: 102400
 
       # Change timestamp type for benchmark measurements
       KAFKA_LOG_MESSAGE_TIMESTAMP_TYPE: LogAppendTime
@@ -53,7 +59,7 @@ services:
     environment:
       - |
         FLINK_PROPERTIES=
-        jobmanager.rpc.address: jobmanager        
+        jobmanager.rpc.address: jobmanager   
 
   taskmanager:
     build:
@@ -68,3 +74,11 @@ services:
         FLINK_PROPERTIES=
         jobmanager.rpc.address: jobmanager
         taskmanager.numberOfTaskSlots: ${TASK_SLOTS:-16}
+
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: "8G"
+    mem_limit: 8G
+    cpus: "4"

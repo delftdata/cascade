@@ -1,15 +1,15 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional, Type, Union
+import logging
+from typing import Any, Iterable, List, Mapping, Optional, Union
 from typing import TYPE_CHECKING
+import uuid
+
 
 if TYPE_CHECKING:
-    # Prevent circular imports
-    from cascade.dataflow.operator import StatelessOperator
-    
+    from cascade.frontend.generator.local_block import CompiledLocalBlock
+    from cascade.dataflow.operator import Operator
 
-class Operator(ABC):
-    pass
 
 @dataclass
 class InitClass:
@@ -24,10 +24,6 @@ class InvokeMethod:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}('{self.method_name}')"
 
-@dataclass
-class Filter:
-    """Filter by this function"""
-    filter_fn: Callable
 
 @dataclass
 class Node(ABC):
@@ -45,146 +41,155 @@ class Node(ABC):
         Node._id_counter += 1
 
     @abstractmethod
-    def propogate(self, event: 'Event', targets: list['Node'], result: Any, **kwargs) -> list['Event']:
+    def propogate(self, event: 'Event', targets: list['Node'], df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> list['Event']:
         pass
 
 @dataclass
-class OpNode(Node):
-    """A node in a `Dataflow` corresponding to a method call of a `StatefulOperator`. 
-    
-    A `Dataflow` may reference the same entity multiple times. 
-    The `StatefulOperator` that this node belongs to is referenced by `entity`."""
-    entity: Type
-    method_type: Union[InitClass, InvokeMethod, Filter]
-    read_key_from: str
-    """Which variable to take as the key for this StatefulOperator"""
+class Return(Node):
+    return_var: str
+    """The name of the local variable to return."""
 
-    assign_result_to: Optional[str] = field(default=None)
-    """What variable to assign the result of this node to, if any."""
-    is_conditional: bool = field(default=False)
-    """Whether or not the boolean result of this node dictates the following path."""
-    collect_target: Optional['CollectTarget'] = field(default=None)
-    """Whether the result of this node should go to a CollectNode."""
-
-    def propogate(self, event: 'Event', targets: List[Node], result: Any) -> list['Event']:
-        return OpNode.propogate_opnode(self, event, targets, result)
-
-    @staticmethod
-    def propogate_opnode(node: Union['OpNode', 'StatelessOpNode'], event: 'Event', targets: list[Node], 
-                         result: Any) -> list['Event']:
-        num_targets = 1 if node.is_conditional else len(targets)
-
-        if event.collect_target is not None:
-            # Assign new collect targets
-            collect_targets = [
-                event.collect_target for i in range(num_targets)
-            ]
-        else:
-            # Keep old collect targets
-            collect_targets = [node.collect_target for i in range(num_targets)]
-
-        if node.is_conditional:
-            edges = event.dataflow.nodes[event.target.id].outgoing_edges
-            true_edges = [edge for edge in edges if edge.if_conditional]
-            false_edges = [edge for edge in edges if not edge.if_conditional]
-            if not (len(true_edges) == len(false_edges) == 1):
-                print(edges)
-            assert len(true_edges) == len(false_edges) == 1
-            target_true = true_edges[0].to_node
-            target_false = false_edges[0].to_node
-
-            assert len(collect_targets) == 1, "num targets should be 1"
-            ct = collect_targets[0]
-
-            return [Event(
-                target_true if result else target_false,
-                event.variable_map,
+    def propogate(self, event: 'Event', targets: List[Node], df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
+        events = []
+        for target in targets:
+            ev = Event(
+                target,
+                event.variable_map, 
                 event.dataflow,
+                call_stack=event.call_stack,
                 _id=event._id,
-                collect_target=ct,
-                metadata=event.metadata)
-            ]
+                metadata=event.metadata,
+                key=event.key)
+            
+            events.append(ev)
+        return events
+        
+@dataclass
+class IfNode(Node):
+    predicate_var: str
+    """The name of the local (boolean) variable to use as predicate."""
 
-        else:
-            return [Event(
-                    target,
-                    event.variable_map, 
-                    event.dataflow,
-                    _id=event._id,
-                    collect_target=ct,
-                    metadata=event.metadata)
-                    
-                    for target, ct in zip(targets, collect_targets)]
+    def propogate(self, event: 'Event', targets: List[Node], df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
+        
+        if_cond = event.variable_map[self.predicate_var]
+        targets = []
+        for edge in event.target.outgoing_edges:
+            assert edge.if_conditional is not None
+            if edge.if_conditional == if_cond:
+                targets.append(edge.to_node)
+
+
+        events = []
+        for target in targets:
+            ev = Event(
+                target,
+                event.variable_map, 
+                event.dataflow,
+                call_stack=event.call_stack,
+                _id=event._id,
+                metadata=event.metadata,
+                key=event.key)
+            
+            events.append(ev)
+        return events
+    
+    def __str__(self) -> str:
+        return f"IF {self.predicate_var}"
+
+@dataclass
+class DataflowRef:
+    operator_name: str
+    dataflow_name: str
+
+    # def get_dataflow(self) -> 'DataFlow':
+    #     try:
+    #         return cascade.core.dataflows[self]
+    #     except KeyError as e:
+    #         raise KeyError(f"DataflowRef {self} not found in cascade.core.dataflows")
     
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.entity.__name__}, {self.method_type})"
+        return f"{self.operator_name}.{self.dataflow_name}"
+    
+    def __hash__(self) -> int:
+        return hash(repr(self))
+        
 
 @dataclass
-class StatelessOpNode(Node):
-    """A node in a `Dataflow` corresponding to a method call of a `StatelessOperator`. 
-    
-    A `Dataflow` may reference the same `StatefulOperator` multiple times. 
-    The `StatefulOperator` that this node belongs to is referenced by `cls`."""
-    operator: 'StatelessOperator'
-    method_type: InvokeMethod
-    """Which variable to take as the key for this StatefulOperator"""
-    
-    assign_result_to: Optional[str] = None
-    """What variable to assign the result of this node to, if any."""
-    is_conditional: bool = False
-    """Whether or not the boolean result of this node dictates the following path."""
-    collect_target: Optional['CollectTarget'] = None
-    """Whether the result of this node should go to a CollectNode."""
-
-    def propogate(self, event: 'Event', targets: List[Node], result: Any) -> List['Event']:
-        return OpNode.propogate_opnode(self, event, targets, result)
-    
-@dataclass
-class DataflowNode(Node):
+class CallRemote(Node):
     """A node in a `DataFlow` corresponding to the call of another dataflow"""
-    dataflow: 'DataFlow'
+    dataflow: 'DataflowRef'
+    """The dataflow to call."""
+
     variable_rename: dict[str, str]
-    
+    """A mapping of input variables (to the dataflow) to variables in the variable map"""
+
     assign_result_to: Optional[str] = None
     """What variable to assign the result of this node to, if any."""
-    is_conditional: bool = False
-    """Whether or not the boolean result of this node dictates the following path."""
-    collect_target: Optional['CollectTarget'] = None
-    """Whether the result of this node should go to a CollectNode."""
 
-    def propogate(self, event: 'Event', targets: List[Node], result: Any) -> List['Event']:
+    keyby: Optional[str] = None
+    """The key, for calls to Stateful Entities"""
+
+    def propogate(self, event: 'Event', targets: List[Node], df_map: dict['DataflowRef', 'DataFlow']) -> List['Event']:
         # remap the variable map of event into the new event
+        new_var_map = {key: event.variable_map[value] for key, value in self.variable_rename.items()}
+        if self.keyby:
+            new_key = event.variable_map[self.keyby]
+        else:
+            new_key = None
+        df = df_map[self.dataflow]
+        new_targets = df.entry
 
-        # add the targets as some sort of dataflow "exit nodes"
-        return self.dataflow
+        # Tail call elimination:
+        # "targets" corresponds to where to go after this CallRemote finishes
+        # the call to self.dataflow
+        #
+        # If this CallRemote is a terminal node in event.dataflow, then we don't
+        # need to go back to event.dataflow, so we don't add it to the call stack.
+        # This node is terminal in event.dataflow iff len(targets) == 0
+        new_call_stack = event.call_stack
+        if len(targets) > 0:
+            new_call_stack = event.call_stack.copy()
+            call = CallStackItem(event.dataflow, self.assign_result_to, event.variable_map, targets, key=event.key)
+            new_call_stack.append(call)
+
+        return [Event(
+                    target,
+                    new_var_map, 
+                    self.dataflow,
+                    _id=event._id,
+                    metadata=event.metadata,
+                    call_stack=new_call_stack,
+                    key=new_key)
+                    
+                    for target in new_targets]
+    
+    def __str__(self) -> str:
+        return f"CALL {self.dataflow}"
 
 
 @dataclass
-class SelectAllNode(Node):
-    """A node type that will yield all items of an entity filtered by 
-    some function.
-    
-    Think of this as executing `SELECT * FROM cls`"""
-    cls: Type
-    collect_target: 'CollectNode'
-    assign_key_to: str
+class CallLocal(Node):
+    method: Union[InvokeMethod, InitClass]
 
-    def propogate(self, event: 'Event', targets: List[Node], result: Any, keys: list[str]):
-        targets = event.dataflow.get_neighbors(event.target)
-        assert len(targets) == 1
-        n = len(keys)
-        collect_targets = [
-            CollectTarget(self.collect_target, n, i)
-            for i in range(n)
-        ]
-        return [Event(
-            targets[0],
-            event.variable_map | {self.assign_key_to: key}, 
-            event.dataflow,
-            _id=event._id,
-            collect_target=ct,
-            metadata=event.metadata)
-            for ct, key in zip(collect_targets, keys)]
+    def propogate(self, event: 'Event', targets: List[Node], df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
+        # For simple calls, we only need to change the target.
+        # Multiple targets results in multiple events
+        events = []
+        for target in targets:
+            ev = Event(
+                target,
+                event.variable_map, 
+                event.dataflow,
+                call_stack=event.call_stack,
+                _id=event._id,
+                metadata=event.metadata,
+                key=event.key)
+            
+            events.append(ev)
+        return events
+
+    def __str__(self) -> str:
+        return f"LOCAL {self.method}"
 
 @dataclass
 class CollectNode(Node):
@@ -192,29 +197,29 @@ class CollectNode(Node):
     
     It will aggregate incoming edges and output them as a list to the outgoing edge.
     Their actual implementation is runtime-dependent."""
-    assign_result_to: str
-    """The variable name in the variable map that will contain the collected result."""
-    read_results_from: str
-    """The variable name in the variable map that the individual items put their result in."""
+    num_events: int
 
-    def propogate(self, event: 'Event', targets: List[Node], result: Any, **kwargs) -> List['Event']:
-        collect_targets = [event.collect_target for i in range(len(targets))]
+    def propogate(self, event: 'Event', targets: List[Node], df_map: dict['DataflowRef', 'DataFlow'], **kwargs) -> List['Event']:
         return [Event(
                     target,
                     event.variable_map, 
                     event.dataflow,
                     _id=event._id,
-                    collect_target=ct,
-                    metadata=event.metadata)
+                    call_stack=event.call_stack,
+                    # collect_target=ct,
+                    metadata=event.metadata,
+                    key=event.key)
                     
-                    for target, ct in zip(targets, collect_targets)]
+                    for target in targets]
+    
+    def __str__(self) -> str:
+        return f"COLLECT {self.num_events}"
 
 @dataclass
 class Edge():
     """An Edge in the Dataflow graph."""
     from_node: Node
     to_node: Node
-    variable_map: dict[str, Any] = field(default_factory=dict)
     if_conditional: Optional[bool] = None
 
 class DataFlow:
@@ -240,17 +245,33 @@ class DataFlow:
         collect-- [item1_price, item2_price] -->user2;
     ```
     """
-    def __init__(self, name: str):
+
+    def __init__(self, name: str, op_name: str, args: Optional[list[str]]=None):
         self.name: str = name
         self.adjacency_list: dict[int, list[int]] = {}
         self.nodes: dict[int, Node] = {}
-        self.entry: Union[Node, List[Node]] = None
+        self.edges: list[Edge] = []
+        self.entry: List[Node] = []
+        self.operator_name = op_name
+        if args:
+            self.args: list[str] = args
+        else:
+            self.args = []
+        self.blocks: dict[str, 'CompiledLocalBlock'] = {}
+
+    def ref(self) -> DataflowRef:
+        return DataflowRef(self.operator_name, self.name)
 
     def add_node(self, node: Node):
         """Add a node to the Dataflow graph if it doesn't already exist."""
         if node.id not in self.adjacency_list:
+            node.outgoing_edges = []
             self.adjacency_list[node.id] = []
             self.nodes[node.id] = node
+
+    def add_block(self, block: 'CompiledLocalBlock'):
+        self.blocks[block.get_method_name()] = block
+
 
     def add_edge(self, edge: Edge):
         """Add an edge to the Dataflow graph. Nodes that don't exist will be added to the graph automatically."""
@@ -259,7 +280,13 @@ class DataFlow:
         if edge.to_node.id not in self.adjacency_list[edge.from_node.id]:
             self.adjacency_list[edge.from_node.id].append(edge.to_node.id)
             edge.from_node.outgoing_edges.append(edge)
+            self.edges.append(edge)
 
+    def add_edge_refs(self, u: int, v: int, if_conditional=None):
+        """Add an edge using node IDs"""
+        from_node = self.nodes[u]
+        to_node = self.nodes[v]
+        self.add_edge(Edge(from_node, to_node, if_conditional=if_conditional))
     
     def remove_edge(self, from_node: Node, to_node: Node):
         """Remove an edge from the Dataflow graph."""
@@ -271,28 +298,33 @@ class DataFlow:
                 edge for edge in from_node.outgoing_edges if edge.to_node.id != to_node.id
             ]
 
+            # TODO: replace self.edges with a better algorithm for removal. 
+            # probably by adding edge information (like edge.if_conditional, or future things)
+            # to self.adjacencylist
+            for i, edge in enumerate(self.edges):
+                if edge.from_node == from_node and edge.to_node == to_node:
+                    break
+            self.edges.pop(i)
+
     def remove_node(self, node: Node):
+        return self.remove_node_by_id(node.id)
+
+    def remove_node_by_id(self, node_id: int):
         """Remove a node from the DataFlow graph and reconnect its parents to its children."""
-        if node.id not in self.nodes:
+        if node_id not in self.nodes:
             return  # Node doesn't exist in the graph
 
 
-        if isinstance(node, OpNode) or isinstance(node, StatelessOpNode):
-            assert not node.is_conditional, "there's no clear way to remove a conditional node"
-            assert not node.assign_result_to, "can't delete node whose result is used"
-            assert not node.collect_target, "can't delete node which has a collect_target"
-
         # Find parents (nodes that have edges pointing to this node)
-        parents = [parent_id for parent_id, children in self.adjacency_list.items() if node.id in children]
+        parents = [parent_id for parent_id, children in self.adjacency_list.items() if node_id in children]
 
         # Find children (nodes that this node points to)
-        children = self.adjacency_list[node.id]
+        children = self.adjacency_list[node_id]
         
         # Set df entry
-        if self.entry == node:
-            print(children)
-            assert len(children) == 1, "cannot remove entry node if it doesn't exactly one child"
-            self.entry = self.nodes[children[0]]
+        if len(self.entry) == 1 and self.entry[0].id == node_id:
+            assert len(children) <= 1, "cannot remove entry node if it has more than two children"
+            self.entry = [self.nodes[id] for id in children]
 
         # Connect each parent to each child
         for parent_id in parents:
@@ -305,57 +337,72 @@ class DataFlow:
         # Remove edges from parents to the node
         for parent_id in parents:
             parent_node = self.nodes[parent_id]
-            self.remove_edge(parent_node, node)
+            self.remove_edge(parent_node, self.nodes[node_id])
 
         # Remove outgoing edges from the node
         for child_id in children:
             child_node = self.nodes[child_id]
-            self.remove_edge(node, child_node)
+            self.remove_edge(self.nodes[node_id], child_node)
         
-        
-
         # Remove the node from the adjacency list and nodes dictionary
-        del self.adjacency_list[node.id]
-        del self.nodes[node.id]
+        del self.adjacency_list[node_id]
+        del self.nodes[node_id]
 
 
     def get_neighbors(self, node: Node) -> List[Node]:
         """Get the outgoing neighbors of this `Node`"""
+        return [edge.to_node for edge in node.outgoing_edges]
+        # TODO: there is a bug with the underlying adjacency_list: 
+        # it doesn't get updated properly sometimes (during parallelization), 
+        # but seemingly only when modifiying when running flink without minicluster
+        # mode. 
         return [self.nodes[id] for id in self.adjacency_list.get(node.id, [])]
+
+    def get_predecessors(self, node: Node) -> List[Node]:
+        """Get the predeccors of this node by following incoming edges"""
+        return [self.nodes[id] for id, adj in self.adjacency_list.items() if node.id in adj]
+
 
     def to_dot(self) -> str:
         """Output the DataFlow graph in DOT (Graphviz) format."""
-        lines = [f"digraph {self.name} {{"]
+        lines = [f"digraph {self.operator_name}_{self.name} {{"]
 
         # Add nodes
         for node in self.nodes.values():
-            lines.append(f'    {node.id} [label="{node}"];')
+            lines.append(f'    {node.id} [label="{str(node)}"];')
 
         # Add edges
-        for from_id, to_ids in self.adjacency_list.items():
-            for to_id in to_ids:
-                lines.append(f"    {from_id} -> {to_id};")
+        for edge in self.edges:
+            line = f"    {edge.from_node.id} -> {edge.to_node.id}"
+            if edge.if_conditional is not None:
+                line += f' [label="{edge.if_conditional}"]'
+            line += ";"
+            lines.append(line)
 
         lines.append("}")
         return "\n".join(lines)
     
-    def generate_event(self, variable_map: dict[str, Any]) -> Union['Event', list['Event']]:
-        if isinstance(self.entry, list):
-            assert len(self.entry) != 0
-            first_event = Event(self.entry[0], variable_map, self)
-            id = first_event._id
-            return [first_event] + [Event(entry, variable_map, self, _id=id) for entry in self.entry[1:]] 
-        else:
-            return Event(self.entry, variable_map, self)
-    
-@dataclass
-class CollectTarget:
-    target_node: CollectNode
-    """Target node"""
-    total_items: int
-    """How many items the merge node needs to wait on (including this one)."""
-    result_idx: int
-    """The index this result should be in the collected array."""
+    def generate_event(self, variable_map: dict[str, Any], key: Optional[str] = None) -> list['Event']:
+        import cascade
+        assert len(self.entry) != 0
+        # give all the events the same id
+        first_event = Event(self.entry[0], variable_map, self.ref(), key=key)
+        id = first_event._id
+        events = [first_event] + [Event(entry, variable_map, self.ref(), _id=id, key=key) for entry in self.entry[1:]] 
+        
+        # TODO: propogate at "compile time" instead of doing this every time
+        local_events = []
+        for ev in events:
+            if isinstance(ev.target, CallRemote) or isinstance(ev.target, IfNode):
+                local_events.extend(ev.propogate(None, cascade.core.dataflows))
+            else:
+                local_events.append(ev)
+
+        return local_events
+
+       
+    def __str__(self) -> str:
+        return f"{self.operator_name}.{self.name}" 
 
 def metadata_dict() -> dict:
     return {
@@ -363,6 +410,16 @@ def metadata_dict() -> dict:
         "deser_times": [],
         "flink_time": 0
     }
+
+@dataclass
+class CallStackItem:
+    dataflow: DataflowRef
+    assign_result_to: Optional[str]
+    var_map: dict[str, str]
+    """Variables are saved in the call stack"""
+    targets: Union[Node, List[Node]]
+    key: Optional[str] = None
+    """The key to use when coming back"""
 
 @dataclass
 class Event():
@@ -375,46 +432,75 @@ class Event():
     """A mapping of variable identifiers to values. 
     If `target` is an `OpNode` this map should include the variables needed for that method."""
 
-    dataflow: Optional['DataFlow']
+    dataflow: DataflowRef
     """The Dataflow that this event is a part of. If None, it won't propogate.
     This might be remove in the future in favour of a routing operator."""
 
     _id: int = field(default=None) # type: ignore (will get updated in __post_init__ if unset)
     """Unique ID for this event. Except in `propogate`, this `id` should not be set."""
     
-    collect_target: Optional[CollectTarget] = field(default=None)
-    """Tells each mergenode (key) how many events to merge on"""
 
-    _id_counter: int = field(init=False, default=0, repr=False)
+    call_stack: List[CallStackItem] = field(default_factory=list)
+    """Target used when dataflow is done, used for recursive dataflows."""
 
     metadata: dict = field(default_factory=metadata_dict)
     """Event metadata containing, for example, timestamps for benchmarking"""
+
+    key: Optional[str] = None
+    """If on a Stateful Operator, the key of the state"""
     
     def __post_init__(self):
         if self._id is None:
-            # Assign a unique ID from the class-level counter
-            self._id = Event._id_counter
-            Event._id_counter += 1
+            # Assign a unique ID 
+            self._id = uuid.uuid4().int
 
-    def propogate(self, result, select_all_keys: Optional[list[str]]=None) -> Union['EventResult', list['Event']]:
+    def propogate(self, result: Any, df_map: dict['DataflowRef','DataFlow']) -> Iterable[Union['EventResult', 'Event']]:
         """Propogate this event through the Dataflow."""
+        targets = df_map[self.dataflow].get_neighbors(self.target)
+        
+        
+        events = []
 
-        if self.dataflow is None:
-            return EventResult(self._id, result, self.metadata)
-        
-        targets = self.dataflow.get_neighbors(self.target)
-        
-        if len(targets) == 0:
-            return EventResult(self._id, result, self.metadata)
+        if len(targets) == 0 and not isinstance(self.target, CallRemote):
+            if len(self.call_stack) > 0:
+                caller = self.call_stack.pop()
+
+                new_df = caller.dataflow
+                new_targets = caller.targets
+                if not isinstance(new_targets, list):
+                    new_targets = [new_targets]
+                var_map = caller.var_map
+                if (x := caller.assign_result_to):
+                    assert isinstance(self.target, Return), type(self.target)
+                    var_map[x] = self.variable_map[self.target.return_var]
+
+                for target in new_targets:
+                    ev = Event(
+                        target,
+                        var_map, 
+                        new_df,
+                        _id=self._id,
+                        call_stack=self.call_stack,
+                        metadata=self.metadata,
+                        key=caller.key
+                    )
+                    events.append(ev)
+            else:
+                if isinstance(self.target, Return):
+                    yield EventResult(self._id, self.variable_map[self.target.return_var], self.metadata)
+                else:
+                    yield EventResult(self._id, result, self.metadata)
+                return
         else:
             current_node = self.target
+            events = current_node.propogate(self, targets, df_map)
 
-            if isinstance(current_node, SelectAllNode):
-                assert select_all_keys
-                return current_node.propogate(self, targets, result, select_all_keys)
+        for event in events:
+            if isinstance(event.target, CallRemote) or isinstance(event.target, IfNode) or isinstance(event.target, Return):
+                # recursively propogate CallRemote events
+                yield from event.propogate(None, df_map)
             else:
-                return current_node.propogate(self, targets, result)
-
+                yield event
 @dataclass
 class EventResult():
     event_id: int

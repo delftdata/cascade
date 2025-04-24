@@ -5,6 +5,8 @@ import networkx as nx
 from klara.core.tree_rewriter import AstBuilder
 from klara.core.cfg import Cfg
 
+from cascade.frontend.ast_visitors.simplify_returns import simplify_returns
+
 
 color_map_map = {0: 'b', 1:'g', 2:'r', 3:'c', 4:'m', 5:'y', 6:'k', -1:'pink'}
 
@@ -40,12 +42,6 @@ def plot_dataflow_graph(G: nx.DiGraph, grey_background: bool = True):
             with_labels=True)
     if grey_background:
         fig.set_facecolor('darkgrey')
-
-def setup_cfg(code: str) -> Cfg:
-        as_tree = AstBuilder().string_build(code)
-        cfg = Cfg(as_tree)
-        cfg.convert_to_ssa()
-        return cfg
 
 
 def to_camel_case(name):
