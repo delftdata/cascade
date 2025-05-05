@@ -29,18 +29,15 @@ def test_entity_calls():
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
     
-    sf = DataflowBuilder(get_total)
-    sf.build_cfg()
-    
     dataflows = {
         DataflowRef("Adder", "add"): DataFlow("add", "Adder", ["a", "b"]),
         DataflowRef("Stock", "get_quantity"): DataFlow("get_quantity", "Item", []),
         DataflowRef("Test", "get_total"): DataFlow("get_total", "Test", [])
     }
+    sf = DataflowBuilder(get_total, dataflows)
+    sf.build_cfg()
+    df = sf.build_df("Test")
 
-
-
-    df = sf.build_df(dataflows, "Test")
     print(df.to_dot())
     for block in df.blocks.values():
         print(block.function_string)
@@ -67,7 +64,11 @@ def test_branching():
     test_class: nodes.Block = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = DataflowBuilder(get_total)
+    dataflows = {
+        DataflowRef("Test", "test_branching"): DataFlow("test_branching", "Test", [])
+    }
+
+    sf = DataflowBuilder(get_total, dataflows)
     sf.build_cfg()
     print(sf.cfg.to_dot())
     new = blocked_cfg(sf.cfg.graph, sf.cfg.get_single_source())
@@ -77,13 +78,9 @@ def test_branching():
     print_digraph(split_cfg(new))
 
     assert len(new.nodes) == 5
-    
-    dataflows = {
-        DataflowRef("Test", "test_branching"): DataFlow("test_branching", "Test", [])
-    }
 
+    df = sf.build_df("Test")
 
-    df = sf.build_df(dataflows, "Test")
     print(df.to_dot())
     for block in df.blocks.values():
         print(block.function_string)
@@ -124,7 +121,11 @@ def test_branching_with_entity_calls():
     test_class: nodes.Block = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = DataflowBuilder(get_total)
+    dataflows = {
+        DataflowRef("Test", "test_branching"): DataFlow("test_branching", "Test", []),
+        DataflowRef("Entity", "call"): DataFlow("call", "Entity", [])
+    }
+    sf = DataflowBuilder(get_total, dataflows)
     sf.build_cfg()
     print(sf.cfg.to_dot())
     new = blocked_cfg(sf.cfg.graph, sf.cfg.get_single_source())
@@ -135,15 +136,12 @@ def test_branching_with_entity_calls():
     print(new_split.nodes)
     assert len(list(new_split.nodes)) == 8
     
-    dataflows = {
-        DataflowRef("Test", "test_branching"): DataFlow("test_branching", "Test", []),
-        DataflowRef("Entity", "call"): DataFlow("call", "Entity", [])
-    }
+
 
 
     # TODO: Check # entity calls, # of blocks, # of local calls
 
-    df = sf.build_df(dataflows, "Test")
+    df = sf.build_df("Test")
     print(df.to_dot())
     for block in df.blocks.values():
         print(block.function_string)

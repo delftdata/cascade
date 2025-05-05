@@ -2,7 +2,7 @@ from typing import Literal
 import cascade
 from cascade.dataflow.dataflow import DataflowRef
 from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
-from cascade.dataflow.optimization.parallelization import parallelize_until_if
+from cascade.dataflow.optimization.parallelization import parallelize, parallelize_until_if
 from cascade.runtime.flink_runtime import FlinkRuntime
 from tests.integration.flink.utils import create_topics, init_flink_runtime
 
@@ -38,6 +38,14 @@ def main():
     df_parallel.name = "upload_movie_prefetch_parallel"
     cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch_parallel")] = df_parallel
     runtime.add_dataflow(df_parallel)
+
+     # for prefetch experiment
+    df_baseline_no = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_no_prefetch")]
+    df_parallel_no = parallelize(df_baseline_no)
+    df_parallel_no.name = "upload_movie_no_prefetch_parallel"
+    cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_no_prefetch_parallel")] = df_parallel_no
+    runtime.add_dataflow(df_parallel_no)
+
 
     print(cascade.core.dataflows.keys())
     

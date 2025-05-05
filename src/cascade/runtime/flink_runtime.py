@@ -19,7 +19,7 @@ from confluent_kafka import Producer, Consumer
 import logging
 
 logger = logging.getLogger("cascade")
-logger.setLevel("INFO")
+logger.setLevel("DEBUG")
 console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
@@ -109,7 +109,7 @@ class RouterOperator(ProcessFunction):
                 else:
                     yield event
             else:
-                assert isinstance(event, EventResult)
+                assert isinstance(event, EventResult), f"Expected EventResult, got: {event}"
                 yield self.out_tag, event
 
 class FlinkOperator(KeyedProcessFunction):
@@ -128,12 +128,12 @@ class FlinkOperator(KeyedProcessFunction):
         event = profile_event(event, "STATEFUL OP INNER ENTRY")
 
         # should be handled by filters on this FlinkOperator    
-        assert(isinstance(event.target, CallLocal)) 
+        assert isinstance(event.target, CallLocal), f"Expected CallLocal target, got: {event.target}"
         logger.debug(f"FlinkOperator {self.operator.name()}[{ctx.get_current_key()}]: Processing: {event.target.method}")
         
         assert(event.dataflow.operator_name == self.operator.name()) 
         key = ctx.get_current_key()
-        assert(key is not None)
+        assert key is not None, f"Expected key for a Stateful Operator"
 
         if isinstance(event.target.method, InitClass):
             result = self.operator.handle_init_class(**event.variable_map).__dict__
@@ -270,7 +270,7 @@ class FlinkCollectOperator(KeyedProcessFunction):
         var_map_num_items = self.var_map.value()
         logger.debug(f"FlinkCollectOp [{ctx.get_current_key()}]: Processing: {event}")
 
-        assert isinstance(event.target, CollectNode)
+        assert isinstance(event.target, CollectNode), f"Expectec CollectNode target, got: {event.target}"
         
         total_events = event.target.num_events
 
@@ -646,7 +646,7 @@ class FlinkRuntime():
             raise RuntimeError("No operators found, were they added to the flink runtime with .add_*_operator()")
 
 
-        op_routed = operator_streams.process(RouterOperator(self.dataflows, collect_tag, result_tag)).name("ROUTER (OP)")
+        op_routed = operator_streams.process(RouterOperator(self.dataflows, collect_tag, result_tag)).name("POST OP ROUTER")
 
         collect_stream = (
             op_routed
@@ -654,7 +654,7 @@ class FlinkRuntime():
                 .key_by(lambda e: str(e._id) + "_" + str(e.target.id)) # might not work in the future if we have multiple merges in one dataflow?
                 .process(FlinkCollectOperator())
                 .name("Collect")
-                .process(RouterOperator(self.dataflows, collect_tag, result_tag))
+                .process(RouterOperator(self.dataflows, collect_tag, result_tag)).name("POST COLLECT ROUTER")
         )
         """Stream that ingests events with an `cascade.dataflow.dataflow.CollectNode` target"""
 

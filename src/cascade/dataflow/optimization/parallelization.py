@@ -79,22 +79,27 @@ def parallelize_until_if(df: DataFlow) -> Tuple[DataFlow, DataFlow]:
     rest = copy.deepcopy(df)
 
     collectors = {}
-    finishers = set()
+    terminal_nodes = set()
     for u in graph.nodes:
+        # Add the node to the updated graph
         updated.add_node(n_map[u])
         rest.remove_node_by_id(u)
+        
+        # Add collect nodes if a node has multiple in flows
         if graph.in_degree(u) > 1:
             c = CollectNode(0)
             updated.add_node(c)
             collectors[u] = c.id
             updated.add_edge_refs(c.id, u)
+        # Terminal nodes have no outgoing edges
         elif graph.out_degree(u) == 0:
-            finishers.add(u)
+            terminal_nodes.add(u)
 
-    if len(finishers) > 1:
+    # Add a collect node at the end if the dependency graph is split
+    if len(terminal_nodes) > 1:
         c = CollectNode(0)
         updated.add_node(c)
-        for f in finishers:
+        for f in terminal_nodes:
             c.num_events += 1
             updated.add_edge_refs(f, c.id)
 

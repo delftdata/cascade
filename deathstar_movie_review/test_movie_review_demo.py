@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"
 
 from cascade.runtime.flink_runtime import FlinkClientSync
 from cascade.dataflow.dataflow import DataflowRef
-from cascade.dataflow.optimization.parallelization import parallelize_until_if
+from cascade.dataflow.optimization.parallelization import parallelize, parallelize_until_if
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
 from cascade.runtime.python_runtime import PythonClientSync, PythonRuntime
 
@@ -194,15 +194,22 @@ def test_deathstar_movie_demo_prefetch_flink():
 
     runtime = utils.init_flink_runtime("deathstar_movie_review.entities.entities")
     
+    # for prefetch experiment
+    df_baseline_no = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_no_prefetch")]
+    df_parallel_no = parallelize(df_baseline_no)
+    df_parallel_no.name = "upload_movie_no_prefetch_parallel"
+    cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_no_prefetch_parallel")] = df_parallel_no
+    runtime.add_dataflow(df_parallel_no)
+
+
      # for prefetch experiment
     df_baseline = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch")]
     df_parallel, _ = parallelize_until_if(df_baseline)
     df_parallel.name = "upload_movie_prefetch_parallel"
     cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch_parallel")] = df_parallel
-
     runtime.add_dataflow(df_parallel)
     print(df_parallel.to_dot())
-    assert len(df_parallel.entry) == 2
+    assert len(df_parallel.entry) == 3
 
 
     client = FlinkClientSync()
@@ -225,7 +232,7 @@ def deathstar_prefetch(client):
     print("review made")
 
 
-    event = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie")].generate_event({"review_0": "100", "rating_0": 3}, "cars")
+    event = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_no_prefetch")].generate_event({"review_0": "100", "rating_0": 3}, "cars")
     result = client.send(event, block=True)
     print("movie uploaded")
 
@@ -233,3 +240,7 @@ def deathstar_prefetch(client):
     result = client.send(event, block=True)
     print("movie uploaded w/ prefetch")
     print(result)
+
+    event = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_no_prefetch_parallel")].generate_event({"review_0": "100", "rating_0": 3}, "cars")
+    result = client.send(event, block=True)
+    print("movie uploaded")

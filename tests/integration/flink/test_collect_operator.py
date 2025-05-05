@@ -2,7 +2,7 @@
 
 from pyflink.datastream.data_stream import CloseableIterator
 from cascade.dataflow.dataflow import DataflowRef
-from cascade.dataflow.optimization.parallelization import parallelize, parallelize_until_if
+from cascade.dataflow.optimization.parallelization import parallelize
 
 from cascade.runtime.flink_runtime import FlinkClientSync
 import tests.integration.flink.utils as utils
