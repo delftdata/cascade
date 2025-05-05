@@ -1,15 +1,17 @@
 import subprocess
 import time
 
+rps = 500
+sec = 30
 
 # Define experiment parameters as a list of dictionaries
 experiments = [
-    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "baseline", "chance": 0.9}},
-    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "prefetch", "chance": 0.9}},
-    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "baseline", "chance": 0.5}},
-    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "prefetch", "chance": 0.5}},
-    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "baseline", "chance": 0.1}},
-    {"parallelism": 4, "benchmark_args": {"requests_per_second": 1000, "seconds": 30, "threads": 20, "experiment": "prefetch", "chance": 0.1}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "baseline", "chance": 0.9, "num_users": 100}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "prefetch", "chance": 0.9, "num_users": 100}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "baseline", "chance": 0.5, "num_users": 100}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "prefetch", "chance": 0.5, "num_users": 100}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "baseline", "chance": 0.1, "num_users": 100}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "prefetch", "chance": 0.1, "num_users": 100}},
 ]
 
 

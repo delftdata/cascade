@@ -46,15 +46,13 @@ class MovieId:
 
     def upload_movie(self, review: ComposeReview, rating: int):
         cond = rating is not None
+        movie_id = self.movie_id
+        review.upload_movie_id(movie_id)
         if cond:
             review.upload_rating(rating)
-            movie_id = self.movie_id
-            review.upload_movie_id(movie_id)
-            return True
+            return cond
         else:
-            movie_id = self.movie_id
-            review.upload_movie_id(movie_id)
-            return False
+            return cond
 
         # if without else isn't invented yet, otherwise this would be 
         # cond = rating is not None
@@ -63,12 +61,24 @@ class MovieId:
         # movie_id = self.movie_id
         # review.upload_movie_id(movie_id)
 
+    def upload_movie_no_prefetch(self, review: ComposeReview, rating: int):
+        cond = rating is not None
+        movie_id = self.movie_id
+        review.upload_movie_id(movie_id)
+        review.upload_rating(rating)
+        if cond:
+            review.upload_rating(rating)
+            return cond
+        else:
+            return cond
+
     def upload_movie_prefetch(self, review: ComposeReview, rating: int):
         cond = rating is not None
         movie_id = self.movie_id
 
-        review.upload_rating(rating)
         review.upload_movie_id(movie_id)
+        review.upload_rating(rating)
+        review.upload_rating(rating)
         return cond
         
 

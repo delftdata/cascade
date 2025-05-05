@@ -74,7 +74,7 @@ class IfNode(Node):
         if_cond = event.variable_map[self.predicate_var]
         targets = []
         for edge in event.target.outgoing_edges:
-            assert edge.if_conditional is not None
+            assert edge.if_conditional is not None, f"The edge did not have an if_conditional set: {edge}"
             if edge.if_conditional == if_cond:
                 targets.append(edge.to_node)
 

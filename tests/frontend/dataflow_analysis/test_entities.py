@@ -23,15 +23,15 @@ def test_call_entity():
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = DataflowBuilder(get_total)
-    sf.build_cfg()
     
     dataflows = {
         DataflowRef("Test", "get_total"): DataFlow("get_total", "Test", ["item1", "item2"]),
         DataflowRef("Stock", "get_quantity"): DataFlow("get_quantity", "Stock", [])
     }
 
-    df = sf.build(dataflows, "Test")
+    sf = DataflowBuilder(get_total, dataflows)
+    sf.build_cfg()
+    df = sf.build("Test")
 
     ## TODO: check blocks/df
     assert len(df.nodes) == 4
@@ -47,6 +47,40 @@ def test_call_entity():
     next = next[0]
     assert isinstance(next, CallLocal)
 
+def test_ssa():
+    program: str = dedent("""
+    class Test:
+                          
+        def get_total(inc: bool):
+            t = 1
+            if inc:
+                t = 2
+            else:
+                t = 3
+            return t""")
+    
+    cfg, _ = setup_cfg(program)
+    blocks = cfg.block_list
+    test_class: nodes.Block = blocks[2] 
+    get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
+
+    
+    dataflows = {
+        DataflowRef("Test", "get_total"): DataFlow("get_total", "Test", ["item1", "item2"]),
+        DataflowRef("Stock", "get_quantity"): DataFlow("get_quantity", "Stock", [])
+    }
+    sf = DataflowBuilder(get_total, dataflows)
+    sf.build_cfg()
+
+    df = sf.build("Test")
+    
+    for block in df.blocks.values():
+        print(block.function_string)
+    for node in df.nodes.values():
+        print(node)
+
+    raise NotImplementedError("there should be a phi node here!")
+
     
 def test_simple_block():
     program: str = dedent("""
@@ -59,13 +93,13 @@ def test_simple_block():
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = DataflowBuilder(get_total)
     
     dataflows = {
         DataflowRef("Test", "add"): DataFlow("get_total", "Test", ["x", "y"]),
     }
+    sf = DataflowBuilder(get_total, dataflows)
 
-    df = sf.build(dataflows, "Test")
+    df = sf.build( "Test")
 
     assert len(df.blocks) == 1
     block = list(df.blocks.values())[0]
@@ -89,14 +123,14 @@ class User:
     user_class = blocks[2] 
     buy_item: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
 
-    sf = DataflowBuilder(buy_item)
     
     dataflows = {
         DataflowRef("User", "buy_item"): DataFlow("buy_item", "User", ["item"]),
         DataflowRef("Item", "get_price"): DataFlow("get_price", "Item", []),
     }
+    sf = DataflowBuilder(buy_item, dataflows)
 
-    df = sf.build(dataflows, "User")
+    df = sf.build("User")
 
     blocks = list(df.blocks.values())
 
@@ -128,14 +162,15 @@ class ComposeReview:
     user_class = blocks[2] 
     upload_unique: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
     
-    sf = DataflowBuilder(upload_unique)
     
     dataflows = {
         DataflowRef("ComposeReview", "upload_unique_id"): DataFlow("upload_unique_id", "ComposeReview", ["review_id"]),
         DataflowRef("ComposeReview", "__init__"): DataFlow("__init__", "ComposeReview", ["req_id"]),
     }
 
-    df = sf.build(dataflows, "ComposeReview")
+    sf = DataflowBuilder(upload_unique, dataflows)
+
+    df = sf.build("ComposeReview")
 
 
     blocks = list(df.blocks.values())
@@ -171,16 +206,18 @@ class Randomer:
     upload_unique: nodes.FunctionDef = user_class.blocks[1].ssa_code.code_list[0]
     
     import random
-    sf = DataflowBuilder(upload_unique, {'random': random})
-    sf.build_cfg()
-    for node in sf.cfg.get_nodes():
-        print(node)
-    
     dataflows = {
         DataflowRef("Randomer", "rand"): DataFlow("rand", "Randomer", []),
     }
 
-    df = sf.build(dataflows, "Randomer")
+    sf = DataflowBuilder(upload_unique, dataflows, {'random': random})
+    sf.build_cfg()
+    for node in sf.cfg.get_nodes():
+        print(node)
+    
+    
+
+    df = sf.build("Randomer")
 
     for block in df.blocks.values():
         print(block.function_string)

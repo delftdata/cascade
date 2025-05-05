@@ -1,7 +1,6 @@
 import cascade
 from cascade.dataflow.dataflow import DataflowRef
-from cascade.dataflow.optimization.parallelization import parallelize_until_if
-from experiments.dynamic_prefetching.run_prefetcher import gen_parallel
+from cascade.dataflow.optimization.parallelization import parallelize, parallelize_until_if
 from tests.integration.flink.utils import create_topics, init_flink_runtime
 
 
@@ -22,15 +21,17 @@ def main():
 
     print(cascade.core.dataflows.keys())
 
-    baseline = cascade.core.dataflows[DataflowRef("Prefetcher", "baseline")]
-    prefetch = cascade.core.dataflows[DataflowRef("Prefetcher", "prefetch")]
 
-    pre_par = gen_parallel(prefetch)
-    cascade.core.dataflows[DataflowRef("Prefetcher", "prefetch_parallel")] = pre_par
+    baseline = cascade.core.dataflows[DataflowRef("NavigationService", "get_directions_baseline")]
+    prefetch = cascade.core.dataflows[DataflowRef("NavigationService", "get_directions_prefetch")]
+
+
+    pre_par = parallelize(prefetch)
+    cascade.core.dataflows[DataflowRef("NavigationService", "get_directions_prefetch_parallel")] = pre_par
     runtime.add_dataflow(pre_par)
 
-    base_par = gen_parallel(baseline)
-    cascade.core.dataflows[DataflowRef("Prefetcher", "baseline_parallel")] = base_par
+    base_par = parallelize(baseline)
+    cascade.core.dataflows[DataflowRef("NavigationService", "get_directions_baseline_parallel")] = base_par
     runtime.add_dataflow(base_par)
 
     runtime.run()
