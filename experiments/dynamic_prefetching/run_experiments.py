@@ -6,12 +6,12 @@ sec = 30
 
 # Define experiment parameters as a list of dictionaries
 experiments = [
-    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "baseline", "chance": 0.9, "num_users": 100}},
-    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "prefetch", "chance": 0.9, "num_users": 100}},
-    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "baseline", "chance": 0.5, "num_users": 100}},
-    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "prefetch", "chance": 0.5, "num_users": 100}},
-    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "baseline", "chance": 0.1, "num_users": 100}},
-    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "prefetch", "chance": 0.1, "num_users": 100}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "baseline", "chance": 0.9, "num_users": 1000}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "prefetch", "chance": 0.9, "num_users": 1000}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "baseline", "chance": 0.5, "num_users": 1000}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "prefetch", "chance": 0.5, "num_users": 1000}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "baseline", "chance": 0.1, "num_users": 1000}},
+    {"parallelism": 8, "benchmark_args": {"requests_per_second": rps, "seconds": sec, "threads": 10, "experiment": "prefetch", "chance": 0.1, "num_users": 1000}},
 ]
 
 
