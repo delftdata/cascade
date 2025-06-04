@@ -1,9 +1,7 @@
 from typing import Literal
 import cascade
 from cascade.dataflow.dataflow import DataflowRef
-from cascade.dataflow.optimization.dead_node_elim import dead_node_elimination
 from cascade.dataflow.optimization.parallelization import parallelize, parallelize_until_if
-from cascade.runtime.flink_runtime import FlinkRuntime
 from tests.integration.flink.utils import create_topics, init_flink_runtime
 
 import os

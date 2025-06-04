@@ -19,7 +19,7 @@ from confluent_kafka import Producer, Consumer
 import logging
 
 logger = logging.getLogger("cascade")
-logger.setLevel("DEBUG")
+logger.setLevel("INFO")
 console_handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
