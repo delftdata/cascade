@@ -35,18 +35,20 @@ def main():
 
     print(cascade.core.dataflows.keys())
 
-    baseline = cascade.core.dataflows[DataflowRef("Prefetcher", "baseline")]
-    prefetch = cascade.core.dataflows[DataflowRef("Prefetcher", "prefetch")]
+    baseline = cascade.core.dataflows[DataflowRef("NavigationService", "get_directions_baseline")]
+    prefetch = cascade.core.dataflows[DataflowRef("NavigationService", "get_directions_prefetch")]
 
 
     pre_par = parallelize(prefetch)
-    cascade.core.dataflows[DataflowRef("Prefetcher", "prefetch_parallel")] = pre_par
+    cascade.core.dataflows[DataflowRef("NavigationService", "get_directions_prefetch_parallel")] = pre_par
 
     base_par = parallelize(baseline)
-    cascade.core.dataflows[DataflowRef("Prefetcher", "baseline_parallel")] = base_par
+    cascade.core.dataflows[DataflowRef("NavigationService", "get_directions_baseline_parallel")] = base_par
 
-    print(base_par.to_dot())
-    print(pre_par.to_dot())
+    for df in cascade.core.dataflows.values():
+        print(df.to_dot())
+        for block in df.blocks.values():
+            print(block.function_string)
 
     run_test()
 
@@ -66,15 +68,43 @@ def wait_for_futures(client: FlinkClientSync):
     futures = client._futures
     return futures
 
-def generate_event(exp: Literal["baseline", "prefetch"], chance: float):
-    baseline = cascade.core.dataflows[DataflowRef("Prefetcher", "baseline_parallel")]
-    prefetch = cascade.core.dataflows[DataflowRef("Prefetcher", "prefetch_parallel")]
+import random
+def seed_users(n: int, percent_premium: float):
+    assert 0 <= percent_premium <= 1
+    client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
+
+    num_premium = int(n * percent_premium)
+    df = cascade.core.dataflows[DataflowRef("User", "__init__")]
+    for i in range(n):
+
+        user_preferences = []
+        if random.random() < 0.5:
+            user_preferences.append("museums")
+        if random.random() < 0.5:
+            user_preferences.append("restaurants")
+        if random.random() < 0.5:
+            user_preferences.append("attractions")
+
+        is_premium = i < num_premium
+        event = df.generate_event({"key": str(i), "is_premium": is_premium, "preferences": user_preferences}, key=str(i))
+        client.send(event)
+    wait_for_futures(client)
+    client.close()
+
+
+        
+
+def generate_event(exp: Literal["baseline", "prefetch"], n: int):
+    baseline = cascade.core.dataflows[DataflowRef("NavigationService", "get_directions_baseline_parallel")]
+    prefetch = cascade.core.dataflows[DataflowRef("NavigationService", "get_directions_prefetch_parallel")]
     df = prefetch if exp == "prefetch" else baseline
 
-    return df.generate_event({"branch_chance_0": chance})
+    key = str(random.randint(0, n-1))
+
+    return df.generate_event({"origin_0": 0, "dest_0": 0, "user_0": key})
 
 def runner(args):
-    chance, bursts, requests_per_second, exp = args
+    bursts, requests_per_second, exp, num_users = args
     client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
     sleep_time = 0.95 / requests_per_second
 
@@ -88,7 +118,7 @@ def runner(args):
             # sleep sometimes between messages
             # if i % (messages_per_burst // sleeps_per_burst) == 0:
             time.sleep(sleep_time)
-            event = generate_event(exp, chance)
+            event = generate_event(exp, num_users)
             client.send(event)
         
         client.flush()
@@ -110,7 +140,7 @@ def runner(args):
 
 def run_test():
     logger = logging.getLogger("cascade")
-    logger.setLevel("INFO")
+    logger.setLevel("DEBUG")
     
     
 
@@ -120,6 +150,7 @@ def run_test():
     parser.add_argument("--threads", type=int, default=1, help="Number of concurrent threads")
     parser.add_argument("--chance", type=float, default=0.5, help="Chance")
     parser.add_argument("--experiment", type=str, default="baseline", help="Experiment type")
+    parser.add_argument("--num_users", type=int, default=1000, help="Number of users")
     args = parser.parse_args()
 
     assert args.experiment in ["baseline", "prefetch"]
@@ -128,7 +159,11 @@ def run_test():
     print(f"Actual requests per second is {int(rps_per_thread * args.threads)} (due to rounding)")
 
 
-    func_args = [(args.chance, args.seconds,rps_per_thread,args.experiment)]
+    print("seeding..")
+    seed_users(args.num_users, args.chance)
+    print("done.")
+
+    func_args = [(args.seconds,rps_per_thread,args.experiment, args.num_users)]
     with Pool(args.threads) as p:
         results = p.map(runner, func_args)
 
@@ -138,7 +173,6 @@ def run_test():
     print(count)
     df = to_pandas(results)
     df.to_csv(f"{args.experiment}_{args.chance}_{args.requests_per_second}.csv")
-        
 
 
 def to_pandas(futures_dict):

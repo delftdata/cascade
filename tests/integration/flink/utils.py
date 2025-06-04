@@ -1,3 +1,4 @@
+from typing import Union
 import cascade
 from cascade.dataflow.dataflow import EventResult
 from cascade.dataflow.operator import StatefulOperator, StatelessOperator
@@ -19,12 +20,16 @@ def wait_for_event_id(id: int, collector: CloseableIterator) -> EventResult:
             return record
         
 
-def init_cascade_from_module(import_path: str):
+def init_cascade_from_module(import_path: Union[str, list[str]]):
     cascade.core.clear()
-    exec(f'import {import_path}')
+    if isinstance(import_path, list):
+        for path in import_path:
+            exec(f'import {path}')
+    else:
+        exec(f'import {import_path}')
     cascade.core.init()
 
-def init_flink_runtime(import_path: str, in_topic=None, out_topic=None, internal_topic=None, parallelism=4, **init_args) -> FlinkRuntime:
+def init_flink_runtime(import_path: Union[str, list[str]], in_topic=None, out_topic=None, internal_topic=None, parallelism=4, **init_args) -> FlinkRuntime:
     init_cascade_from_module(import_path)
 
     if in_topic is None:

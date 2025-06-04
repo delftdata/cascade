@@ -8,7 +8,9 @@ from cascade.frontend.cfg import Statement, ControlFlowGraph
 
 class ControlFlowGraphBuilder:
 
-    def __init__(self, block_list: list, globals: list[str]):
+    def __init__(self, block_list: list, globals: list[str], operators: list[str]):
+        self.operators = operators
+        self.remote_entities: list = []
         self.block_list: list = block_list
         self.globals = globals
 
@@ -22,6 +24,10 @@ class ControlFlowGraphBuilder:
                 i += 1
                 args = b.args
                 function_vars = [f'{a.arg}_0' for a in args.args]
+
+                # detect arguments that are entities e.g. `item1: Item` means item1 is an entity.
+                self.remote_entities.extend([f'{a.arg}' for a in args.args if str(a.annotation).strip("'") in self.operators])
+ 
                 statement.extend_targets(function_vars)
                 statement.extend_values(function_vars)
                 graph.append_statement(statement)
@@ -53,10 +59,11 @@ class ControlFlowGraphBuilder:
                 statement.values = [v.__repr__() for v in values]
                 contains_attribute, attribute = ContainsAttributeVisitor.check_return_attribute(b)
                 if contains_attribute:
-                    if attribute.value.id in self.globals:
-                        statement.values.remove(attribute.value.id)
-                    elif attribute.value.id != 'self':
-                        statement.set_remote()
+                    if hasattr(attribute.value, "id"):
+                        if attribute.value.id in self.globals:
+                            statement.values.remove(attribute.value.id)
+                        elif attribute.value.id in self.remote_entities or attribute.value.id in self.operators:
+                            statement.set_remote()
 
                     statement.set_attribute(attribute)
            
@@ -67,6 +74,6 @@ class ControlFlowGraphBuilder:
         return graph
     
     @classmethod
-    def build(cls, block_list: list, globals: list[str]) -> ControlFlowGraph:
-        dataflow_graph_builder = cls(block_list, globals)
+    def build(cls, block_list: list, globals: list[str], operators: list[str]) -> ControlFlowGraph:
+        dataflow_graph_builder = cls(block_list, globals, operators)
         return dataflow_graph_builder.construct_dataflow_graph()

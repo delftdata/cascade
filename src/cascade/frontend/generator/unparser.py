@@ -58,5 +58,24 @@ def unparse(block: RawBasicBlock):
             for v in block.values[1:]:
                 res += " {} {}".format(block.op, unparse(v))
             return res  
+        case nodes.Tuple:
+            vals = [unparse(v) for v in block.elts]
+
+            if len(vals) > 1:
+                res = f"({','.join(vals)})"
+            elif len(vals) == 1:
+                res = f"({vals[0]},)"
+            else:
+                res = "tuple()"
+            return res
+        
+        case nodes.List:
+            vals = [unparse(v) for v in block.elts]
+
+            res = f"[{','.join(vals)}]"
+            return res
+        case nodes.Pass:
+            return "pass"
+           
         case _:
             raise NotImplementedError(f"{type(block)}: {block}")

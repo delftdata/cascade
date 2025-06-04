@@ -29,7 +29,8 @@ def parallelize(df):
 import networkx as nx
 def parallelize_until_if(df: DataFlow) -> Tuple[DataFlow, DataFlow]:  
     """Parallelize df, stopping at the first if node.
-    The first dataflow returned is the parallelized dataflow up until the first if node. The second dataflow is the rest of the dataflow"""  
+    The first dataflow returned is the parallelized dataflow up until the first if node. The second dataflow is the rest of the dataflow.
+    We therefore only parallelize until the first if node."""  
     # create the dependency graph
     ans = []
     # since we use SSA, every variable has exactly one node that writes it
@@ -60,10 +61,12 @@ def parallelize_until_if(df: DataFlow) -> Tuple[DataFlow, DataFlow]:
     n_map = copy.deepcopy(df.nodes)
     for node in ans:
         for read in node.reads:
+
+            # "read" will not be in write nodes if it is part of the dataflow arguments
+            #
+            # a more thorough implementation would not need the if check,
+            # instead add the arguments as writes to some function entry node
             if read in write_nodes:
-                # "read" will not be in write nodes if it is part of the arguments
-                # a more thorough implementation would not need the if check,
-                # and add the arguments as writes to some function entry node
                 graph.add_edge(write_nodes[read], node.node.id)
                 try:
                     nodes_with_indegree_0.remove(node.node.id)
@@ -79,22 +82,27 @@ def parallelize_until_if(df: DataFlow) -> Tuple[DataFlow, DataFlow]:
     rest = copy.deepcopy(df)
 
     collectors = {}
-    finishers = set()
+    terminal_nodes = set()
     for u in graph.nodes:
+        # Add the node to the updated graph
         updated.add_node(n_map[u])
         rest.remove_node_by_id(u)
+        
+        # Add collect nodes if a node has multiple in flows
         if graph.in_degree(u) > 1:
             c = CollectNode(0)
             updated.add_node(c)
             collectors[u] = c.id
             updated.add_edge_refs(c.id, u)
+        # Terminal nodes have no outgoing edges
         elif graph.out_degree(u) == 0:
-            finishers.add(u)
+            terminal_nodes.add(u)
 
-    if len(finishers) > 1:
+    # Add a collect node at the end if the dependency graph is split
+    if len(terminal_nodes) > 1:
         c = CollectNode(0)
         updated.add_node(c)
-        for f in finishers:
+        for f in terminal_nodes:
             c.num_events += 1
             updated.add_edge_refs(f, c.id)
 

@@ -20,7 +20,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"
 
 from tests.integration.flink.utils import init_cascade_from_module, init_flink_runtime
 import cascade
-from cascade.dataflow.optimization.parallelization import parallelize_until_if
+from cascade.dataflow.optimization.parallelization import parallelize
 from cascade.dataflow.dataflow import DataflowRef,EventResult
 from cascade.runtime.flink_runtime import FlinkClientSync
 
@@ -74,7 +74,7 @@ def upload_movie(rating_chance: float, prefetch=False):
     if prefetch:
         movie_id = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch_parallel")]
     else:
-        movie_id = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie")]
+        movie_id = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_no_prefetch_parallel")]
 
     return movie_id.generate_event({
             "review_0": str(req_id),
@@ -160,13 +160,13 @@ def write_dict_to_pkl(futures_dict, filename):
         ret: EventResult = event_data.get("ret")
         row = {
             "event_id": event_id,
-            "sent": str(event_data.get("sent")),
-            "sent_t": event_data.get("sent_t"),
-            "ret": str(event_data.get("ret")),
-            "ret_t": event_data.get("ret_t"),
-            "roundtrip": ret.metadata["roundtrip"] if ret else None,
+            # "sent": str(event_data.get("sent")),
+            # "sent_t": event_data.get("sent_t"),
+            # "ret": str(event_data.get("ret")),
+            # "ret_t": event_data.get("ret_t"),
+            # "roundtrip": ret.metadata["roundtrip"] if ret else None,
             "flink_time": ret.metadata["flink_time"] if ret else None,
-            "deser_times": ret.metadata["deser_times"] if ret else None,
+            # "deser_times": ret.metadata["deser_times"] if ret else None,
             "loops": ret.metadata["loops"] if ret else None,
             "latency": event_data["ret_t"][1] - event_data["sent_t"][1] if ret else None
         }
@@ -208,8 +208,14 @@ def main():
     init_client = FlinkClientSync(IN_TOPIC, OUT_TOPIC)
 
     # for prefetch experiment
+    df_baseline_no = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_no_prefetch")]
+    df_parallel_no = parallelize(df_baseline_no)
+    df_parallel_no.name = "upload_movie_no_prefetch_parallel"
+    cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_no_prefetch_parallel")] = df_parallel_no
+
+    # for prefetch experiment
     df_baseline = cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch")]
-    df_parallel, _ = parallelize_until_if(df_baseline)
+    df_parallel = parallelize(df_baseline)
     df_parallel.name = "upload_movie_prefetch_parallel"
     cascade.core.dataflows[DataflowRef("MovieId", "upload_movie_prefetch_parallel")] = df_parallel
 
@@ -259,8 +265,12 @@ def main():
     print(f"Median Flink time : {flink_time:.2f} ms ({flink_prct:.2f}%)")
     init_client.close()
 
-    df = preprocess(args.output, df)
-    df.to_pickle(args.output)
+    # Ignore the first warmup_time seconds of events
+    warmup_time_s = 3
+    warmup_events = int(warmup_time_s * args.requests_per_second)
+    df = df.iloc[warmup_events:]
+    # df = preprocess(args.output, df)
+    df.to_csv(args.output)
     
 
 import re

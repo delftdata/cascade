@@ -88,7 +88,7 @@ def init():
                 df.entry = [n0]
                 blocks = []
             else:
-                df = DataflowBuilder(method.method_node, cls.class_desc.globals).build(dataflows, op_name)
+                df = DataflowBuilder(method.method_node, dataflows, cls.class_desc.globals).build(op_name)
             
             dataflows[df.ref()] = df
             op.dataflows[df.ref()] = df

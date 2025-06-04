@@ -26,14 +26,14 @@ def test_linear_program():
     # TODO: check that the produced ssa code made variables for 
     #  - item1.get_quantity()
     #  - item2.get_quantity()
-    df: ControlFlowGraph = ControlFlowGraphBuilder.build([get_total] + get_total.body, globals=[])
+    df: ControlFlowGraph = ControlFlowGraphBuilder.build([get_total] + get_total.body, globals=[], operators=["Stock", "Adder"])
     for n in df.graph.nodes:
         print(n)
     for u, v in df.graph.edges:
         print(u.block_num, v.block_num)
     # print(df.graph.edges)
 
-def test_ssa():
+def test_remote_call_assignment():
     program: str = dedent("""
     class Test:
                           
@@ -49,7 +49,7 @@ def test_ssa():
     # TODO: check that the produced ssa code made variables for 
     #  - item1.get_quantity()
     #  - item2.get_quantity()
-    df: ControlFlowGraph = ControlFlowGraphBuilder.build([get_total] + get_total.body, globals=[])
+    df: ControlFlowGraph = ControlFlowGraphBuilder.build([get_total] + get_total.body, globals=[], operators=["Stock", "Adder"])
     print(df.graph.nodes)
     print(df.graph.edges)
 
@@ -76,6 +76,6 @@ def test_if_else_branches():
     # TODO: check that the produced ssa code made variables for 
     #  - item1.get_quantity()
     #  - item2.get_quantity()
-    df: ControlFlowGraph = ControlFlowGraphBuilder.build([test] + test.body, globals=[])
+    df: ControlFlowGraph = ControlFlowGraphBuilder.build([test] + test.body, globals=[], operators=["Stock"])
     # print(df.graph.nodes)
     # print(df.graph.edges)

@@ -22,15 +22,15 @@ def test_easy_branching():
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = DataflowBuilder(get_total)
     
     dataflows = {
         DataflowRef("User", "buy_item"): DataFlow("buy_item", "User", ["item"]),
         DataflowRef("User", "__init__"): DataFlow("__init__", "User", ["username", "balance"]),
         DataflowRef("Item", "get_price"): DataFlow("get_price", "Item", []),
     }
+    sf = DataflowBuilder(get_total, dataflows)
+    df = sf.build("User")
 
-    df = sf.build(dataflows, "User")
     print(df.to_dot())
     assert len(df.nodes) == 7
     ifnode = None
@@ -58,15 +58,15 @@ def test_complex_predicate():
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = DataflowBuilder(get_total)
     
     dataflows = {
         DataflowRef("User", "buy_item"): DataFlow("buy_item", "User", ["item"]),
         DataflowRef("User", "__init__"): DataFlow("__init__", "User", ["username", "balance"]),
         DataflowRef("Item", "get_price"): DataFlow("get_price", "Item", []),
     }
+    sf = DataflowBuilder(get_total, dataflows)
+    df = sf.build("User")
 
-    df = sf.build(dataflows, "User")
     print(df.to_dot())
     assert len(df.nodes) == 6, "complex predicate should create a temp variable assignment"
 
@@ -90,15 +90,15 @@ def test_multiple_return():
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = DataflowBuilder(get_total)
     
     dataflows = {
         DataflowRef("User", "buy_item"): DataFlow("buy_item", "User", ["item"]),
         DataflowRef("User", "__init__"): DataFlow("__init__", "User", ["username", "balance"]),
         DataflowRef("Item", "get_price"): DataFlow("get_price", "Item", []),
     }
+    sf = DataflowBuilder(get_total, dataflows)
+    df = sf.build("User")
 
-    df = sf.build(dataflows, "User")
     print(df.to_dot())
 
 def test_no_else():
@@ -117,15 +117,15 @@ def test_no_else():
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = DataflowBuilder(get_total)
     
     dataflows = {
         DataflowRef("User", "buy_item"): DataFlow("buy_item", "User", ["item"]),
         DataflowRef("User", "__init__"): DataFlow("__init__", "User", ["username", "balance"]),
         DataflowRef("Item", "get_price"): DataFlow("get_price", "Item", []),
     }
+    sf = DataflowBuilder(get_total, dataflows)
+    df = sf.build("User")
 
-    df = sf.build(dataflows, "User")
     print(df.to_dot())
     assert len(df.nodes) == 6
 
@@ -139,6 +139,8 @@ def test_nested():
                 item_price = item.get_price()
                 if True:
                     x = 20
+                else:
+                    x = 30
                 self.balance = self.balance - item_price
                 return "item bought"
             else:
@@ -154,14 +156,48 @@ def test_nested():
     test_class = blocks[2] 
     get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
 
-    sf = DataflowBuilder(get_total)
     
     dataflows = {
         DataflowRef("User", "buy_item"): DataFlow("buy_item", "User", ["item"]),
         DataflowRef("User", "__init__"): DataFlow("__init__", "User", ["username", "balance"]),
         DataflowRef("Item", "get_price"): DataFlow("get_price", "Item", []),
     }
+    sf = DataflowBuilder(get_total, dataflows)
+    df = sf.build("User")
 
-    df = sf.build(dataflows, "User")
     print(df.to_dot())
-    assert len(df.nodes) == 12
+    conditional_edges = 0
+    for edge in df.edges:
+        if edge.if_conditional is not None:
+            conditional_edges += 1
+    assert conditional_edges == 6
+
+
+def test_local_methods():
+    program: str = dedent("""
+    class Test:
+                          
+        def get_total(item: Item):
+            q1 = item.get_quantity()
+            lst = []
+            lst.append(q1)
+            lst.append(23)
+            return lst""")
+    
+    cfg, _ = setup_cfg(program)
+    blocks = cfg.block_list
+    test_class: nodes.Block = blocks[2] 
+    get_total: nodes.FunctionDef = test_class.blocks[1].ssa_code.code_list[0]
+
+    
+    dataflows = {
+        DataflowRef("Test", "get_total"): DataFlow("get_total", "Test", ["item"]),
+        DataflowRef("Item", "get_quantity"): DataFlow("get_quantity", "Item", []),
+    }
+    sf = DataflowBuilder(get_total, dataflows)
+    df = sf.build("Test")
+
+    print(df.to_dot())
+    assert len(df.nodes) == 3
+    for block in df.blocks.values():
+        print(block.function_string)

@@ -13,9 +13,9 @@ def rps(num, branch_chance, producer_threads=1):
 
 # Define experiment parameters as a list of dictionaries
 experiments = [
-    {"parallelism": 4, "benchmark_args": {**rps(500, 0.1, producer_threads=10)}},
-    {"parallelism": 4, "benchmark_args": {**rps(500, 0.5, producer_threads=10)}},
-    {"parallelism": 4, "benchmark_args": {**rps(500, 0.9, producer_threads=10)}},
+    {"parallelism": 8, "benchmark_args": {**rps(500, 0.1, producer_threads=10)}},
+    {"parallelism": 8, "benchmark_args": {**rps(500, 0.5, producer_threads=10)}},
+    {"parallelism": 8, "benchmark_args": {**rps(500, 0.9, producer_threads=10)}},
 ]
 
 
@@ -46,7 +46,7 @@ for e in ["baseline", "prefetch"]:
         subprocess.run(flink_cmd, check=True, env=env)
         
         # Start benchmark
-        filename = f"{e}_p-{exp['parallelism']}_rps-{exp['benchmark_args']['requests_per_second']}_chance-{exp['benchmark_args']['branch_chance']}.pkl"
+        filename = f"{e}_{exp['benchmark_args']['branch_chance']}_{exp['benchmark_args']['requests_per_second']}_{exp['parallelism']}.csv"
         benchmark_cmd = [
             "python", "-u", "-m", "deathstar_movie_review.start_prefetch_experiment", "--output", filename, "--experiment", e
         ]

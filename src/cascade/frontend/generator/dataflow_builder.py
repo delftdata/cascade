@@ -157,8 +157,8 @@ def blocked_cfg(statement_graph: nx.DiGraph, entry: Statement) -> nx.DiGraph:
         
 
         # add then and orelse blocks
-        graph.add_edges_from(then_blocked_graph.edges())
-        graph.add_edges_from(orelse_blocked_graph.edges())
+        graph.add_edges_from(then_blocked_graph.edges(data=True))
+        graph.add_edges_from(orelse_blocked_graph.edges(data=True))
         
         # connect them to this node
         first_then = list(then_blocked_graph.nodes)[0]
@@ -173,7 +173,7 @@ def blocked_cfg(statement_graph: nx.DiGraph, entry: Statement) -> nx.DiGraph:
             except IndexError:
                 first_finally = succ_then[0]
             finally_graph = blocked_cfg(statement_graph, first_finally)
-            graph.add_edges_from(finally_graph.edges())
+            graph.add_edges_from(finally_graph.edges(data=True))
             first_finally = list(finally_graph.nodes)[0]
         
             graph.add_edge(last_then, first_finally)
@@ -186,15 +186,18 @@ def blocked_cfg(statement_graph: nx.DiGraph, entry: Statement) -> nx.DiGraph:
 
 
 class DataflowBuilder:
-    def __init__(self, function_def: nodes.FunctionDef, globals: Optional[dict[str, Any]] = None):
+    def __init__(self, function_def: nodes.FunctionDef, dataflows: dict[DataflowRef, DataFlow], globals: Optional[dict[str, Any]] = None):
         self.function_def = function_def
         self.name = self.function_def.name
         self.globals = globals
+        self.dataflows = dataflows
 
 
     def build_cfg(self):
+        operators = [d.operator_name for d in self.dataflows.keys()]
+
         global_names = list(self.globals.keys()) if self.globals else []
-        cfg: ControlFlowGraph = ControlFlowGraphBuilder.build([self.function_def] + self.function_def.body, global_names)
+        cfg: ControlFlowGraph = ControlFlowGraphBuilder.build([self.function_def] + self.function_def.body, global_names, operators)
         self.type_map = ExtractTypeVisitor.extract(self.function_def)
         cfg.name = self.function_def.name
 
@@ -205,9 +208,9 @@ class DataflowBuilder:
 
         self.blocked_cfg = split_cfg(blocked_cfg(cfg.graph, cfg.get_single_source()))
     
-    def build_df(self, dataflows: dict[DataflowRef, DataFlow], op_name: str) -> DataFlow:
+    def build_df(self, op_name: str) -> DataFlow:
         df_ref = DataflowRef(op_name, self.name)
-        df = dataflows[df_ref]
+        df = self.dataflows[df_ref]
 
         node_id_map = {}
 
@@ -215,7 +218,7 @@ class DataflowBuilder:
         is_entry = True
         for statement_block in self.blocked_cfg.nodes:
             if len(statement_block) == 1 and statement_block[0].is_remote():
-                node = to_entity_call(statement_block[0], self.type_map, dataflows)
+                node = to_entity_call(statement_block[0], self.type_map, self.dataflows)
             elif len(statement_block) == 1 and statement_block[0].is_predicate:
                 rawblock = statement_block[0].block
                 assert isinstance(rawblock, nodes.Bool), type(rawblock)
@@ -244,8 +247,8 @@ class DataflowBuilder:
         return df
     
     
-    def build(self, dataflows: dict[DataflowRef, DataFlow], op_name: str) -> DataFlow:
+    def build(self, op_name: str) -> DataFlow:
         self.build_cfg()
 
-        return self.build_df(dataflows, op_name)
+        return self.build_df(op_name)
 
